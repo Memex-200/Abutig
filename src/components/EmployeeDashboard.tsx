@@ -1,17 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  FileText, 
-  Eye, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
-  AlertCircle, 
-  User,
-  Filter,
+import React, { useState, useEffect } from "react";
+import {
+  FileText,
+  Eye,
+  Clock,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Plus,
   Search,
-  MessageSquare
-} from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+  Filter,
+  MessageSquare,
+  Edit,
+  User,
+  Calendar,
+  MapPin,
+} from "lucide-react";
+import { useAuth } from "../contexts/AuthContext";
 
 interface Complaint {
   id: string;
@@ -22,116 +26,225 @@ interface Complaint {
     name: string;
     icon: string;
   };
+  createdAt: string;
+  resolvedAt?: string;
   complainant: {
     fullName: string;
     phone: string;
   };
-  assignedTo?: {
-    fullName: string;
-  };
-  createdAt: string;
-  resolvedAt?: string;
+  assignedTo?: string;
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  location: string;
+  internalNotes?: string[];
+  updates?: Array<{
+    id: string;
+    message: string;
+    createdAt: string;
+    createdBy: string;
+  }>;
 }
 
 const EmployeeDashboard: React.FC = () => {
   const { user } = useAuth();
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [updateLoading, setUpdateLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"new" | "in-progress">("new");
+  const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(
+    null
+  );
+  const [filters, setFilters] = useState({
+    type: "",
+    status: "",
+    dateFrom: "",
+    dateTo: "",
+    priority: "",
+  });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [updateForm, setUpdateForm] = useState({
+    status: "",
+    message: "",
+    internalNote: "",
+  });
 
   useEffect(() => {
-    fetchComplaints();
-  }, [statusFilter]);
+    if (user) {
+      fetchComplaints();
+    }
+  }, [user, activeTab]);
 
   const fetchComplaints = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      let url = 'http://localhost:3001/api/complaints?';
-      
-      const params = new URLSearchParams();
-      params.append('limit', '50');
-      
-      if (statusFilter) {
-        params.append('status', statusFilter);
-      }
-      
-      if (searchTerm) {
-        params.append('search', searchTerm);
-      }
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
 
-      const response = await fetch(url + params.toString(), {
-        headers: {
-          'Authorization': `Bearer ${token}`
+      const response = await fetch(
+        `http://localhost:3001/api/complaints/employee?tab=${activeTab}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         }
-      });
+      );
 
       if (response.ok) {
         const result = await response.json();
         setComplaints(result.complaints);
       }
     } catch (error) {
-      console.error('Error fetching complaints:', error);
+      console.error("Error fetching complaints:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const updateComplaintStatus = async (complaintId: string, newStatus: string, notes?: string) => {
-    setUpdateLoading(true);
-    try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch(`http://localhost:3001/api/complaints/${complaintId}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ status: newStatus, notes })
-      });
-
-      if (response.ok) {
-        fetchComplaints();
-        setSelectedComplaint(null);
-      }
-    } catch (error) {
-      console.error('Error updating status:', error);
-    } finally {
-      setUpdateLoading(false);
-    }
-  };
-
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'NEW': return 'bg-blue-100 text-blue-800';
-      case 'UNDER_REVIEW': return 'bg-yellow-100 text-yellow-800';
-      case 'IN_PROGRESS': return 'bg-purple-100 text-purple-800';
-      case 'RESOLVED': return 'bg-green-100 text-green-800';
-      case 'REJECTED': return 'bg-red-100 text-red-800';
-      case 'CLOSED': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case "NEW":
+        return "bg-blue-100 text-blue-800";
+      case "UNDER_REVIEW":
+        return "bg-yellow-100 text-yellow-800";
+      case "IN_PROGRESS":
+        return "bg-purple-100 text-purple-800";
+      case "RESOLVED":
+        return "bg-green-100 text-green-800";
+      case "REJECTED":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-gray-100 text-gray-800";
     }
   };
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case 'NEW': return 'جديد';
-      case 'UNDER_REVIEW': return 'قيد المراجعة';
-      case 'IN_PROGRESS': return 'جار المعالجة';
-      case 'RESOLVED': return 'تم الحل';
-      case 'REJECTED': return 'مرفوض';
-      case 'CLOSED': return 'مغلق';
-      default: return status;
+      case "NEW":
+        return "جديد";
+      case "UNDER_REVIEW":
+        return "قيد المراجعة";
+      case "IN_PROGRESS":
+        return "جار المعالجة";
+      case "RESOLVED":
+        return "تم الحل";
+      case "REJECTED":
+        return "مرفوض";
+      default:
+        return status;
     }
   };
 
-  const filteredComplaints = complaints.filter(complaint => {
-    if (searchTerm && !complaint.title.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        !complaint.complainant.fullName.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-    return true;
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case "HIGH":
+        return "bg-red-100 text-red-800";
+      case "MEDIUM":
+        return "bg-yellow-100 text-yellow-800";
+      case "LOW":
+        return "bg-green-100 text-green-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getPriorityLabel = (priority: string) => {
+    switch (priority) {
+      case "HIGH":
+        return "عالية";
+      case "MEDIUM":
+        return "متوسطة";
+      case "LOW":
+        return "منخفضة";
+      default:
+        return priority;
+    }
+  };
+
+  const filteredComplaints = complaints.filter((complaint) => {
+    const matchesSearch =
+      complaint.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      complaint.complainant.fullName
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
+
+    const matchesType = !filters.type || complaint.type.name === filters.type;
+    const matchesStatus =
+      !filters.status || complaint.status === filters.status;
+    const matchesPriority =
+      !filters.priority || complaint.priority === filters.priority;
+
+    const matchesDate =
+      (!filters.dateFrom ||
+        new Date(complaint.createdAt) >= new Date(filters.dateFrom)) &&
+      (!filters.dateTo ||
+        new Date(complaint.createdAt) <= new Date(filters.dateTo));
+
+    return (
+      matchesSearch &&
+      matchesType &&
+      matchesStatus &&
+      matchesPriority &&
+      matchesDate
+    );
   });
+
+  const handleUpdateComplaint = async () => {
+    if (!selectedComplaint || !updateForm.status) return;
+
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
+
+      const response = await fetch(
+        `http://localhost:3001/api/complaints/${selectedComplaint.id}/update`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            status: updateForm.status,
+            message: updateForm.message,
+            internalNote: updateForm.internalNote,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        setShowUpdateModal(false);
+        setUpdateForm({ status: "", message: "", internalNote: "" });
+        fetchComplaints();
+      }
+    } catch (error) {
+      console.error("Error updating complaint:", error);
+    }
+  };
+
+  const assignToSelf = async (complaintId: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
+
+      const response = await fetch(
+        `http://localhost:3001/api/complaints/${complaintId}/assign`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            assignedTo: user?.id,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        fetchComplaints();
+      }
+    } catch (error) {
+      console.error("Error assigning complaint:", error);
+    }
+  };
 
   if (loading) {
     return (
@@ -150,33 +263,28 @@ const EmployeeDashboard: React.FC = () => {
         {/* Header */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
           <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <User className="w-10 h-10 text-blue-600 bg-blue-100 rounded-full p-2 ml-4" />
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">
-                  لوحة تحكم الموظف
-                </h1>
-                <p className="text-gray-600 mt-1">
-                  أهلاً بك، {user?.fullName}
-                </p>
-              </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">
+                أهلاً بك، {user?.fullName}
+              </h1>
+              <p className="text-gray-600 mt-1">إدارة الشكاوى والمتابعة</p>
             </div>
-            <div className="flex items-center space-x-reverse space-x-6">
+            <div className="flex items-center space-x-reverse space-x-4">
               <div className="text-center">
                 <div className="text-2xl font-bold text-blue-600">
-                  {complaints.filter(c => c.status === 'NEW').length}
+                  {complaints.filter((c) => c.status === "NEW").length}
                 </div>
                 <div className="text-sm text-gray-600">شكاوى جديدة</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-orange-600">
-                  {complaints.filter(c => ['UNDER_REVIEW', 'IN_PROGRESS'].includes(c.status)).length}
+                <div className="text-2xl font-bold text-purple-600">
+                  {complaints.filter((c) => c.status === "IN_PROGRESS").length}
                 </div>
                 <div className="text-sm text-gray-600">قيد المعالجة</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-600">
-                  {complaints.filter(c => c.status === 'RESOLVED').length}
+                  {complaints.filter((c) => c.status === "RESOLVED").length}
                 </div>
                 <div className="text-sm text-gray-600">تم حلها</div>
               </div>
@@ -184,57 +292,158 @@ const EmployeeDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Search and Filter */}
-        <div className="bg-white rounded-xl shadow-sm mb-6 p-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
+        {/* Tabs */}
+        <div className="bg-white rounded-xl shadow-sm mb-6">
+          <div className="border-b border-gray-200">
+            <nav className="flex space-x-reverse space-x-8 px-6">
+              <button
+                onClick={() => setActiveTab("new")}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === "new"
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                }`}
+              >
+                الشكاوى الجديدة (
+                {complaints.filter((c) => c.status === "NEW").length})
+              </button>
+              <button
+                onClick={() => setActiveTab("in-progress")}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === "in-progress"
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                }`}
+              >
+                قيد المعالجة (
+                {
+                  complaints.filter((c) =>
+                    ["UNDER_REVIEW", "IN_PROGRESS"].includes(c.status)
+                  ).length
+                }
+                )
+              </button>
+            </nav>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                البحث
+              </label>
               <div className="relative">
-                <Search className="w-5 h-5 absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="البحث في الشكاوى..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pr-10 pl-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="البحث في الشكاوى..."
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 />
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center">
-                <Filter className="w-4 h-4 text-gray-500 ml-2" />
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">جميع الحالات</option>
-                  <option value="NEW">جديد</option>
-                  <option value="UNDER_REVIEW">قيد المراجعة</option>
-                  <option value="IN_PROGRESS">جار المعالجة</option>
-                  <option value="RESOLVED">تم الحل</option>
-                  <option value="REJECTED">مرفوض</option>
-                </select>
-              </div>
-              <button
-                onClick={fetchComplaints}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                نوع الشكوى
+              </label>
+              <select
+                value={filters.type}
+                onChange={(e) =>
+                  setFilters({ ...filters, type: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               >
-                تحديث
+                <option value="">الكل</option>
+                <option value="بناء مخالف">بناء مخالف</option>
+                <option value="صرف صحي">صرف صحي</option>
+                <option value="نظافة">نظافة</option>
+                <option value="طرق">طرق</option>
+                <option value="إنارة">إنارة</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                الأولوية
+              </label>
+              <select
+                value={filters.priority}
+                onChange={(e) =>
+                  setFilters({ ...filters, priority: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">الكل</option>
+                <option value="HIGH">عالية</option>
+                <option value="MEDIUM">متوسطة</option>
+                <option value="LOW">منخفضة</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                من تاريخ
+              </label>
+              <input
+                type="date"
+                value={filters.dateFrom}
+                onChange={(e) =>
+                  setFilters({ ...filters, dateFrom: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                إلى تاريخ
+              </label>
+              <input
+                type="date"
+                value={filters.dateTo}
+                onChange={(e) =>
+                  setFilters({ ...filters, dateTo: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={() =>
+                  setFilters({
+                    type: "",
+                    status: "",
+                    dateFrom: "",
+                    dateTo: "",
+                    priority: "",
+                  })
+                }
+                className="w-full bg-gray-100 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-200 transition-colors"
+              >
+                مسح الفلاتر
               </button>
             </div>
           </div>
         </div>
 
-        {/* Complaints Table */}
+        {/* Complaints List */}
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-xl font-semibold text-gray-900">
+              الشكاوى ({filteredComplaints.length})
+            </h2>
+          </div>
+
           {filteredComplaints.length === 0 ? (
             <div className="text-center py-12">
               <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                لا توجد شكاوى مخصصة لك
+                لا توجد شكاوى
               </h3>
               <p className="text-gray-600">
-                سيتم إعلامك عند تخصيص شكاوى جديدة لك
+                {activeTab === "new"
+                  ? "لا توجد شكاوى جديدة"
+                  : "لا توجد شكاوى قيد المعالجة"}
               </p>
             </div>
           ) : (
@@ -246,10 +455,13 @@ const EmployeeDashboard: React.FC = () => {
                       الشكوى
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      المشتكي
+                      مقدم الشكوى
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       النوع
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      الأولوية
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       الحالة
@@ -273,40 +485,89 @@ const EmployeeDashboard: React.FC = () => {
                           <div className="text-sm text-gray-500 truncate max-w-xs">
                             {complaint.description}
                           </div>
+                          <div className="flex items-center text-xs text-gray-400 mt-1">
+                            <MapPin className="w-3 h-3 ml-1" />
+                            {complaint.location}
+                          </div>
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {complaint.complainant.fullName}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {complaint.complainant.phone}
-                          </div>
+                        <div className="text-sm text-gray-900">
+                          {complaint.complainant.fullName}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {complaint.complainant.phone}
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center">
-                          <span className="text-lg ml-2">{complaint.type.icon}</span>
-                          <span className="text-sm text-gray-900">{complaint.type.name}</span>
+                          <span className="text-lg ml-2">
+                            {complaint.type.icon}
+                          </span>
+                          <span className="text-sm text-gray-900">
+                            {complaint.type.name}
+                          </span>
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(complaint.status)}`}>
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(
+                            complaint.priority
+                          )}`}
+                        >
+                          {getPriorityLabel(complaint.priority)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                            complaint.status
+                          )}`}
+                        >
                           {getStatusLabel(complaint.status)}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
-                        {new Date(complaint.createdAt).toLocaleDateString('ar-EG')}
+                        {new Date(complaint.createdAt).toLocaleDateString(
+                          "ar-EG"
+                        )}
                       </td>
                       <td className="px-6 py-4 text-sm font-medium">
-                        <button
-                          onClick={() => setSelectedComplaint(complaint)}
-                          className="text-blue-600 hover:text-blue-900 flex items-center"
-                        >
-                          <Eye className="w-4 h-4 ml-1" />
-                          معالجة
-                        </button>
+                        <div className="flex items-center space-x-reverse space-x-2">
+                          <button
+                            onClick={() => setSelectedComplaint(complaint)}
+                            className="text-blue-600 hover:text-blue-900 flex items-center"
+                          >
+                            <Eye className="w-4 h-4 ml-1" />
+                            عرض
+                          </button>
+                          {complaint.status === "NEW" && (
+                            <button
+                              onClick={() => assignToSelf(complaint.id)}
+                              className="text-green-600 hover:text-green-900 flex items-center"
+                            >
+                              <User className="w-4 h-4 ml-1" />
+                              تعيين
+                            </button>
+                          )}
+                          {complaint.status !== "RESOLVED" &&
+                            complaint.status !== "REJECTED" && (
+                              <button
+                                onClick={() => {
+                                  setSelectedComplaint(complaint);
+                                  setUpdateForm({
+                                    ...updateForm,
+                                    status: complaint.status,
+                                  });
+                                  setShowUpdateModal(true);
+                                }}
+                                className="text-purple-600 hover:text-purple-900 flex items-center"
+                              >
+                                <Edit className="w-4 h-4 ml-1" />
+                                تحديث
+                              </button>
+                            )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -319,11 +580,11 @@ const EmployeeDashboard: React.FC = () => {
         {/* Complaint Details Modal */}
         {selectedComplaint && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6 border-b border-gray-200">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xl font-semibold text-gray-900">
-                    معالجة الشكوى
+                    تفاصيل الشكوى
                   </h3>
                   <button
                     onClick={() => setSelectedComplaint(null)}
@@ -335,93 +596,134 @@ const EmployeeDashboard: React.FC = () => {
               </div>
 
               <div className="p-6 space-y-6">
-                {/* Complaint Info */}
-                <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">
-                    {selectedComplaint.title}
-                  </h4>
-                  <div className="flex items-center space-x-reverse space-x-4 mb-4">
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(selectedComplaint.status)}`}>
-                      {getStatusLabel(selectedComplaint.status)}
-                    </span>  
-                    <div className="flex items-center text-sm text-gray-600">
-                      <span className="text-lg ml-2">{selectedComplaint.type.icon}</span>
-                      {selectedComplaint.type.name}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">
+                      {selectedComplaint.title}
+                    </h4>
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-reverse space-x-4">
+                        <span
+                          className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
+                            selectedComplaint.status
+                          )}`}
+                        >
+                          {getStatusLabel(selectedComplaint.status)}
+                        </span>
+                        <span
+                          className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getPriorityColor(
+                            selectedComplaint.priority
+                          )}`}
+                        >
+                          {getPriorityLabel(selectedComplaint.priority)}
+                        </span>
+                      </div>
+                      <div className="flex items-center text-sm text-gray-600">
+                        <span className="text-lg ml-2">
+                          {selectedComplaint.type.icon}
+                        </span>
+                        {selectedComplaint.type.name}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <h5 className="text-sm font-medium text-gray-700 mb-1">
+                        مقدم الشكوى:
+                      </h5>
+                      <p className="text-gray-900">
+                        {selectedComplaint.complainant.fullName}
+                      </p>
+                      <p className="text-gray-600">
+                        {selectedComplaint.complainant.phone}
+                      </p>
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-medium text-gray-700 mb-1">
+                        الموقع:
+                      </h5>
+                      <p className="text-gray-900">
+                        {selectedComplaint.location}
+                      </p>
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-medium text-gray-700 mb-1">
+                        تاريخ التقديم:
+                      </h5>
+                      <p className="text-gray-900">
+                        {new Date(
+                          selectedComplaint.createdAt
+                        ).toLocaleDateString("ar-EG", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <h5 className="text-sm font-medium text-gray-700 mb-2">وصف الشكوى:</h5>
-                  <p className="text-gray-600 leading-relaxed bg-gray-50 p-4 rounded-lg">
+                  <h5 className="text-sm font-medium text-gray-700 mb-2">
+                    وصف الشكوى:
+                  </h5>
+                  <p className="text-gray-600 leading-relaxed">
                     {selectedComplaint.description}
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h5 className="text-sm font-medium text-gray-700 mb-2">معلومات المشتكي:</h5>
-                    <p className="text-gray-600">
-                      <strong>الاسم:</strong> {selectedComplaint.complainant.fullName}<br />
-                      <strong>الهاتف:</strong> {selectedComplaint.complainant.phone}
-                    </p>
-                  </div>
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h5 className="text-sm font-medium text-gray-700 mb-2">تاريخ التقديم:</h5>
-                    <p className="text-gray-600">
-                      {new Date(selectedComplaint.createdAt).toLocaleDateString('ar-EG', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </p>
-                  </div>
-                </div>
+                {selectedComplaint.updates &&
+                  selectedComplaint.updates.length > 0 && (
+                    <div>
+                      <h5 className="text-sm font-medium text-gray-700 mb-2">
+                        التحديثات:
+                      </h5>
+                      <div className="space-y-3">
+                        {selectedComplaint.updates.map((update) => (
+                          <div
+                            key={update.id}
+                            className="bg-gray-50 p-3 rounded-lg"
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm font-medium text-gray-900">
+                                {update.createdBy}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {new Date(update.createdAt).toLocaleDateString(
+                                  "ar-EG"
+                                )}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600">
+                              {update.message}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-                {/* Status Update Actions */}
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <h5 className="text-sm font-medium text-gray-700 mb-4">تحديث حالة الشكوى:</h5>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedComplaint.status === 'NEW' && (
-                      <>
-                        <button
-                          onClick={() => updateComplaintStatus(selectedComplaint.id, 'UNDER_REVIEW')}
-                          disabled={updateLoading}
-                          className="bg-yellow-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-yellow-700 disabled:opacity-50 transition-colors"
-                        >
-                          بدء المراجعة
-                        </button>
-                        <button
-                          onClick={() => updateComplaintStatus(selectedComplaint.id, 'IN_PROGRESS')}
-                          disabled={updateLoading}
-                          className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 transition-colors"
-                        >
-                          بدء المعالجة
-                        </button>
-                      </>
-                    )}
-                    {['UNDER_REVIEW', 'IN_PROGRESS'].includes(selectedComplaint.status) && (
-                      <>
-                        <button
-                          onClick={() => updateComplaintStatus(selectedComplaint.id, 'RESOLVED')}
-                          disabled={updateLoading}
-                          className="bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
-                        >
-                          تم الحل
-                        </button>
-                        <button
-                          onClick={() => updateComplaintStatus(selectedComplaint.id, 'REJECTED')}
-                          disabled={updateLoading}
-                          className="bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
-                        >
-                          رفض الشكوى
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
+                {selectedComplaint.internalNotes &&
+                  selectedComplaint.internalNotes.length > 0 && (
+                    <div>
+                      <h5 className="text-sm font-medium text-gray-700 mb-2">
+                        الملاحظات الداخلية:
+                      </h5>
+                      <div className="space-y-2">
+                        {selectedComplaint.internalNotes.map((note, index) => (
+                          <div
+                            key={index}
+                            className="bg-yellow-50 p-3 rounded-lg border-r-4 border-yellow-400"
+                          >
+                            <p className="text-sm text-gray-700">{note}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
               </div>
 
               <div className="px-6 py-4 border-t border-gray-200">
@@ -430,6 +732,95 @@ const EmployeeDashboard: React.FC = () => {
                   className="w-full bg-gray-100 text-gray-700 py-2 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
                 >
                   إغلاق
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Update Complaint Modal */}
+        {showUpdateModal && selectedComplaint && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full">
+              <div className="p-6 border-b border-gray-200">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  تحديث حالة الشكوى
+                </h3>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    الحالة الجديدة
+                  </label>
+                  <select
+                    value={updateForm.status}
+                    onChange={(e) =>
+                      setUpdateForm({ ...updateForm, status: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">اختر الحالة</option>
+                    <option value="UNDER_REVIEW">قيد المراجعة</option>
+                    <option value="IN_PROGRESS">جار المعالجة</option>
+                    <option value="RESOLVED">تم الحل</option>
+                    <option value="REJECTED">مرفوض</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    رسالة للمواطن
+                  </label>
+                  <textarea
+                    value={updateForm.message}
+                    onChange={(e) =>
+                      setUpdateForm({ ...updateForm, message: e.target.value })
+                    }
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="اكتب رسالة للمواطن..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    ملاحظة داخلية
+                  </label>
+                  <textarea
+                    value={updateForm.internalNote}
+                    onChange={(e) =>
+                      setUpdateForm({
+                        ...updateForm,
+                        internalNote: e.target.value,
+                      })
+                    }
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="ملاحظة داخلية (اختياري)..."
+                  />
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-gray-200 flex space-x-reverse space-x-3">
+                <button
+                  onClick={handleUpdateComplaint}
+                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+                >
+                  تحديث الشكوى
+                </button>
+                <button
+                  onClick={() => {
+                    setShowUpdateModal(false);
+                    setUpdateForm({
+                      status: "",
+                      message: "",
+                      internalNote: "",
+                    });
+                  }}
+                  className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                >
+                  إلغاء
                 </button>
               </div>
             </div>

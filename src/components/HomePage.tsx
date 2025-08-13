@@ -63,11 +63,35 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
       name: "شكوى طريق أو رصف",
       description: "تلف في الطرق أو الأرصفة",
     },
-    { icon: "💡", name: "شكوى إنارة", description: "مشاكل في الإنارة العامة" },
+    {
+      icon: "💡",
+      name: "شكوى إنارة",
+      description: "مشاكل في الإنارة العامة",
+    },
     {
       icon: "📶",
-      name: "شكوى ضعف الإنترنت",
-      description: "ضعف أو انقطاع الإنترنت",
+      name: "شكوى ضعف أو انقطاع الإنترنت",
+      description: "ضعف أو انقطاع الإنترنت / الشبكة",
+    },
+    {
+      icon: "🌳",
+      name: "شكوى تعديات على ممتلكات عامة",
+      description: "تعديات على أراضي أو ممتلكات عامة",
+    },
+    {
+      icon: "🛠️",
+      name: "شكوى صيانة أو كهرباء",
+      description: "مشاكل في الصيانة أو الكهرباء",
+    },
+    {
+      icon: "🚓",
+      name: "شكوى أمنية أو تعدي",
+      description: "مشاكل أمنية أو تعديات",
+    },
+    {
+      icon: "✉️",
+      name: "أخرى",
+      description: "شكاوى أخرى مع تحديد التفاصيل",
     },
   ];
 
@@ -132,12 +156,20 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
               >
                 تقديم شكوى جديدة
               </button>
-              <button
-                onClick={() => onNavigate("login")}
-                className="border-2 border-white text-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-white hover:text-blue-600 transition-all duration-300 transform hover:scale-105"
-              >
-                تسجيل دخول الموظفين
-              </button>
+              <div className="flex items-center space-x-reverse space-x-4">
+                <button
+                  onClick={() => onNavigate("login")}
+                  className="border-2 border-white text-white px-6 py-3 rounded-lg font-semibold text-lg hover:bg-white hover:text-blue-600 transition-all duration-300 transform hover:scale-105"
+                >
+                  موظف/أدمن
+                </button>
+                <button
+                  onClick={() => onNavigate("citizen-login")}
+                  className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold text-lg hover:bg-green-700 transition-all duration-300 transform hover:scale-105"
+                >
+                  مواطن
+                </button>
+              </div>
             </div>
           </div>
         </div>

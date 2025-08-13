@@ -149,31 +149,68 @@ router.get(
               complaintsLastMonth) *
             100;
 
+      // Calculate overdue complaints (complaints older than 7 days)
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      const overdueComplaints = await prisma.complaint.count({
+        where: {
+          ...filters,
+          createdAt: {
+            lt: sevenDaysAgo,
+          },
+          status: {
+            notIn: ["RESOLVED", "REJECTED", "CLOSED"],
+          },
+        },
+      });
+
+      // Calculate average resolution time
+      const resolvedComplaintsData = await prisma.complaint.findMany({
+        where: {
+          ...filters,
+          status: "RESOLVED",
+          resolvedAt: {
+            not: null,
+          },
+        },
+        select: {
+          createdAt: true,
+          resolvedAt: true,
+        },
+      });
+
+      const avgResolutionTime =
+        resolvedComplaintsData.length > 0
+          ? resolvedComplaintsData.reduce((total, complaint) => {
+              const resolutionTime =
+                new Date(complaint.resolvedAt) - new Date(complaint.createdAt);
+              return total + resolutionTime;
+            }, 0) /
+            resolvedComplaintsData.length /
+            (1000 * 60 * 60 * 24) // Convert to days
+          : 0;
+
+      // Get total users count
+      const totalUsers = await prisma.user.count();
+      const activeUsers = await prisma.user.count({
+        where: { isActive: true },
+      });
+
       res.json({
-        overview: {
-          totalComplaints,
-          newComplaints,
-          inProgressComplaints,
-          resolvedComplaints,
-          complaintsThisMonth,
-          complaintsLastMonth,
-          growthPercentage: Math.round(growthPercentage * 100) / 100,
-        },
-        charts: {
-          complaintsByType: complaintsByTypeWithNames,
-          complaintsByStatus: complaintsByStatus.map((item) => ({
-            status: getStatusLabel(item.status),
-            count: item._count.id,
-          })),
-        },
-        recentComplaints: recentComplaints.map((complaint) => ({
-          id: complaint.id,
-          title: complaint.title,
-          type: complaint.type.name,
-          complainant: complaint.complainant.fullName,
-          status: complaint.status,
-          createdAt: complaint.createdAt,
+        totalComplaints,
+        newComplaints,
+        inProgressComplaints,
+        resolvedComplaints,
+        totalUsers,
+        activeUsers,
+        complaintsByType: complaintsByTypeWithNames,
+        complaintsByStatus: complaintsByStatus.map((item) => ({
+          status: getStatusLabel(item.status),
+          count: item._count.id,
         })),
+        overdueComplaints,
+        avgResolutionTime: Math.round(avgResolutionTime * 100) / 100,
       });
     } catch (error) {
       console.error("Get stats error:", error);

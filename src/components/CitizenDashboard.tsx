@@ -7,8 +7,10 @@ import {
   XCircle,
   AlertCircle,
   Plus,
+  Bell,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import NotificationCenter from "./NotificationCenter";
 
 interface Complaint {
   id: string;
@@ -30,6 +32,7 @@ const CitizenDashboard: React.FC = () => {
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(
     null
   );
+  const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
     if (complainant) {
@@ -175,6 +178,15 @@ const CitizenDashboard: React.FC = () => {
                 </div>
                 <div className="text-sm text-gray-600">قيد المعالجة</div>
               </div>
+              <button
+                onClick={() => setShowNotifications(true)}
+                className="relative p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              >
+                <Bell className="w-6 h-6" />
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  3
+                </span>
+              </button>
             </div>
           </div>
         </div>
@@ -393,6 +405,12 @@ const CitizenDashboard: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Notification Center */}
+        <NotificationCenter
+          isOpen={showNotifications}
+          onClose={() => setShowNotifications(false)}
+        />
       </div>
     </div>
   );

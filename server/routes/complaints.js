@@ -492,14 +492,66 @@ router.patch(
   }
 );
 
-// Export complaints
+// NEW FUNCTIONALITY: تصدير الشكاوى بصيغة Excel - تم إضافته في الإصدار 2.0.0
 router.get(
   "/export/excel",
   authenticateToken,
-  requireRole(["ADMIN"]),
+  requireRole(["ADMIN", "EMPLOYEE"]),
+  [
+    query("status")
+      .optional()
+      .isIn([
+        "NEW",
+        "UNDER_REVIEW",
+        "IN_PROGRESS",
+        "RESOLVED",
+        "REJECTED",
+        "CLOSED",
+      ]),
+    query("typeId").optional().isString(),
+    query("dateFrom").optional().isISO8601(),
+    query("dateTo").optional().isISO8601(),
+    query("assignedToId").optional().isString(),
+  ],
   async (req, res) => {
     try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: "معاملات غير صالحة",
+          details: errors.array(),
+        });
+      }
+
+      // Build filters
+      const filters = {};
+
+      // Role-based filtering
+      if (req.user.role === "EMPLOYEE") {
+        filters.assignedToId = req.user.id;
+      }
+
+      if (req.query.status) filters.status = req.query.status;
+      if (req.query.typeId) filters.typeId = req.query.typeId;
+      if (req.query.assignedToId && req.user.role === "ADMIN") {
+        filters.assignedToId = req.query.assignedToId;
+      }
+
+      // Date filtering
+      if (req.query.dateFrom || req.query.dateTo) {
+        filters.createdAt = {};
+        if (req.query.dateFrom) {
+          filters.createdAt.gte = new Date(req.query.dateFrom);
+        }
+        if (req.query.dateTo) {
+          const dateTo = new Date(req.query.dateTo);
+          dateTo.setHours(23, 59, 59, 999); // End of day
+          filters.createdAt.lte = dateTo;
+        }
+      }
+
       const complaints = await prisma.complaint.findMany({
+        where: filters,
         include: {
           type: true,
           complainant: {
@@ -507,6 +559,7 @@ router.get(
               fullName: true,
               phone: true,
               nationalId: true,
+              email: true,
             },
           },
           assignedTo: {
@@ -518,17 +571,36 @@ router.get(
         orderBy: { createdAt: "desc" },
       });
 
+      // Status translation
+      const statusNames = {
+        NEW: "جديدة",
+        UNDER_REVIEW: "قيد المراجعة",
+        IN_PROGRESS: "قيد التنفيذ",
+        RESOLVED: "تم الحل",
+        REJECTED: "مرفوضة",
+        CLOSED: "مغلقة",
+      };
+
       const data = complaints.map((complaint) => ({
         "رقم الشكوى": complaint.id,
         "اسم المشتكي": complaint.complainant.fullName,
         "رقم الهاتف": complaint.complainant.phone,
         "الرقم القومي": complaint.complainant.nationalId,
+        "البريد الإلكتروني": complaint.complainant.email || "غير محدد",
         "نوع الشكوى": complaint.type.name,
         العنوان: complaint.title,
         الوصف: complaint.description,
-        الحالة: complaint.status,
+        الموقع: complaint.location || "غير محدد",
+        الحالة: statusNames[complaint.status] || complaint.status,
+        الأولوية:
+          complaint.priority === "HIGH"
+            ? "عالية"
+            : complaint.priority === "MEDIUM"
+            ? "متوسطة"
+            : "منخفضة",
         "الموظف المخصص": complaint.assignedTo?.fullName || "غير محدد",
         "تاريخ التقديم": complaint.createdAt.toLocaleDateString("ar-EG"),
+        "وقت التقديم": complaint.createdAt.toLocaleTimeString("ar-EG"),
         "تاريخ الحل":
           complaint.resolvedAt?.toLocaleDateString("ar-EG") || "لم يتم الحل",
       }));
@@ -539,18 +611,296 @@ router.get(
 
       const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
 
+      const filename = `complaints_${
+        new Date().toISOString().split("T")[0]
+      }.xlsx`;
+
       res.setHeader(
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       );
-      res.setHeader(
-        "Content-Disposition",
-        "attachment; filename=complaints.xlsx"
-      );
+      res.setHeader("Content-Disposition", `attachment; filename=${filename}`);
       res.send(buffer);
     } catch (error) {
-      console.error("Export error:", error);
-      res.status(500).json({ error: "خطأ في التصدير" });
+      console.error("Export Excel error:", error);
+      res.status(500).json({ error: "خطأ في تصدير Excel" });
+    }
+  }
+);
+
+// NEW FUNCTIONALITY: تصدير الشكاوى بصيغة CSV - تم إضافته في الإصدار 2.0.0
+router.get(
+  "/export/csv",
+  authenticateToken,
+  requireRole(["ADMIN", "EMPLOYEE"]),
+  [
+    query("status")
+      .optional()
+      .isIn([
+        "NEW",
+        "UNDER_REVIEW",
+        "IN_PROGRESS",
+        "RESOLVED",
+        "REJECTED",
+        "CLOSED",
+      ]),
+    query("typeId").optional().isString(),
+    query("dateFrom").optional().isISO8601(),
+    query("dateTo").optional().isISO8601(),
+    query("assignedToId").optional().isString(),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: "معاملات غير صالحة",
+          details: errors.array(),
+        });
+      }
+
+      // Build filters (same as Excel export)
+      const filters = {};
+
+      if (req.user.role === "EMPLOYEE") {
+        filters.assignedToId = req.user.id;
+      }
+
+      if (req.query.status) filters.status = req.query.status;
+      if (req.query.typeId) filters.typeId = req.query.typeId;
+      if (req.query.assignedToId && req.user.role === "ADMIN") {
+        filters.assignedToId = req.query.assignedToId;
+      }
+
+      if (req.query.dateFrom || req.query.dateTo) {
+        filters.createdAt = {};
+        if (req.query.dateFrom) {
+          filters.createdAt.gte = new Date(req.query.dateFrom);
+        }
+        if (req.query.dateTo) {
+          const dateTo = new Date(req.query.dateTo);
+          dateTo.setHours(23, 59, 59, 999);
+          filters.createdAt.lte = dateTo;
+        }
+      }
+
+      const complaints = await prisma.complaint.findMany({
+        where: filters,
+        include: {
+          type: true,
+          complainant: {
+            select: {
+              fullName: true,
+              phone: true,
+              nationalId: true,
+              email: true,
+            },
+          },
+          assignedTo: {
+            select: {
+              fullName: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      // Status translation
+      const statusNames = {
+        NEW: "جديدة",
+        UNDER_REVIEW: "قيد المراجعة",
+        IN_PROGRESS: "قيد التنفيذ",
+        RESOLVED: "تم الحل",
+        REJECTED: "مرفوضة",
+        CLOSED: "مغلقة",
+      };
+
+      // Create CSV content
+      const headers = [
+        "رقم الشكوى",
+        "اسم المشتكي",
+        "رقم الهاتف",
+        "الرقم القومي",
+        "البريد الإلكتروني",
+        "نوع الشكوى",
+        "العنوان",
+        "الوصف",
+        "الموقع",
+        "الحالة",
+        "الأولوية",
+        "الموظف المخصص",
+        "تاريخ التقديم",
+        "وقت التقديم",
+        "تاريخ الحل",
+      ];
+
+      const csvRows = [
+        headers.join(","),
+        ...complaints.map((complaint) =>
+          [
+            `"${complaint.id}"`,
+            `"${complaint.complainant.fullName}"`,
+            `"${complaint.complainant.phone}"`,
+            `"${complaint.complainant.nationalId}"`,
+            `"${complaint.complainant.email || "غير محدد"}"`,
+            `"${complaint.type.name}"`,
+            `"${complaint.title.replace(/"/g, '""')}"`,
+            `"${complaint.description.replace(/"/g, '""')}"`,
+            `"${complaint.location || "غير محدد"}"`,
+            `"${statusNames[complaint.status] || complaint.status}"`,
+            `"${
+              complaint.priority === "HIGH"
+                ? "عالية"
+                : complaint.priority === "MEDIUM"
+                ? "متوسطة"
+                : "منخفضة"
+            }"`,
+            `"${complaint.assignedTo?.fullName || "غير محدد"}"`,
+            `"${complaint.createdAt.toLocaleDateString("ar-EG")}"`,
+            `"${complaint.createdAt.toLocaleTimeString("ar-EG")}"`,
+            `"${
+              complaint.resolvedAt?.toLocaleDateString("ar-EG") || "لم يتم الحل"
+            }"`,
+          ].join(",")
+        ),
+      ];
+
+      const csvContent = csvRows.join("\n");
+      const filename = `complaints_${
+        new Date().toISOString().split("T")[0]
+      }.csv`;
+
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename=${filename}`);
+
+      // Add BOM for proper Arabic display in Excel
+      res.write("\ufeff");
+      res.end(csvContent);
+    } catch (error) {
+      console.error("Export CSV error:", error);
+      res.status(500).json({ error: "خطأ في تصدير CSV" });
+    }
+  }
+);
+
+// Add internal note to complaint (Employee/Admin only) - NEW FUNCTIONALITY
+router.post(
+  "/:id/internal-note",
+  authenticateToken,
+  requireRole(["EMPLOYEE", "ADMIN"]),
+  [body("note").isLength({ min: 1 }).withMessage("الملاحظة مطلوبة")],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: "بيانات غير صالحة",
+          details: errors.array(),
+        });
+      }
+
+      const complaintId = req.params.id;
+      const { note } = req.body;
+
+      // Check if complaint exists and user has access
+      const complaint = await prisma.complaint.findUnique({
+        where: { id: complaintId },
+        include: { assignedTo: true },
+      });
+
+      if (!complaint) {
+        return res.status(404).json({ error: "الشكوى غير موجودة" });
+      }
+
+      // Role-based access control
+      if (
+        req.user.role === "EMPLOYEE" &&
+        complaint.assignedToId !== req.user.id
+      ) {
+        return res.status(403).json({
+          error: "غير مسموح لك بإضافة ملاحظات لهذه الشكوى",
+        });
+      }
+
+      // Add internal note as a log entry
+      await prisma.complaintLog.create({
+        data: {
+          complaintId,
+          userId: req.user.id,
+          action: "INTERNAL_NOTE",
+          notes: note,
+        },
+      });
+
+      res.json({
+        success: true,
+        message: "تم إضافة الملاحظة الداخلية بنجاح",
+      });
+    } catch (error) {
+      console.error("Add internal note error:", error);
+      res.status(500).json({ error: "خطأ في إضافة الملاحظة الداخلية" });
+    }
+  }
+);
+
+// Get complaint internal notes (Employee/Admin only) - NEW FUNCTIONALITY
+router.get(
+  "/:id/internal-notes",
+  authenticateToken,
+  requireRole(["EMPLOYEE", "ADMIN"]),
+  async (req, res) => {
+    try {
+      const complaintId = req.params.id;
+
+      // Check if complaint exists and user has access
+      const complaint = await prisma.complaint.findUnique({
+        where: { id: complaintId },
+        select: { id: true, assignedToId: true },
+      });
+
+      if (!complaint) {
+        return res.status(404).json({ error: "الشكوى غير موجودة" });
+      }
+
+      // Role-based access control
+      if (
+        req.user.role === "EMPLOYEE" &&
+        complaint.assignedToId !== req.user.id
+      ) {
+        return res.status(403).json({
+          error: "غير مسموح لك بعرض ملاحظات هذه الشكوى",
+        });
+      }
+
+      // Get internal notes
+      const internalNotes = await prisma.complaintLog.findMany({
+        where: {
+          complaintId,
+          action: "INTERNAL_NOTE",
+        },
+        include: {
+          user: {
+            select: {
+              fullName: true,
+              role: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      res.json({
+        notes: internalNotes.map((note) => ({
+          id: note.id,
+          content: note.notes,
+          createdAt: note.createdAt,
+          createdBy: note.user.fullName,
+          createdByRole: note.user.role,
+        })),
+      });
+    } catch (error) {
+      console.error("Get internal notes error:", error);
+      res.status(500).json({ error: "خطأ في جلب الملاحظات الداخلية" });
     }
   }
 );

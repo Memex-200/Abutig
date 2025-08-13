@@ -10,6 +10,8 @@ const complaintRoutes = require("./routes/complaints");
 const userRoutes = require("./routes/users");
 const typeRoutes = require("./routes/types");
 const statsRoutes = require("./routes/stats");
+const notificationRoutes = require("./routes/notifications");
+const settingsRoutes = require("./routes/settings");
 
 const app = express();
 const prisma = new PrismaClient();
@@ -48,6 +50,8 @@ app.use("/api/complaints", complaintRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/types", typeRoutes);
 app.use("/api/stats", statsRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/settings", settingsRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

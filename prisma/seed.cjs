@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("بدء إضافة البيانات الأولية...");
 
-  // إنشاء أنواع الشكاوى
+  // NEW FUNCTIONALITY: أنواع الشكاوى المناسبة لأبوتيج - تم إضافتها في الإصدار 2.0.0
   const complaintTypes = [
     {
       name: "شكوى بناء مخالف",

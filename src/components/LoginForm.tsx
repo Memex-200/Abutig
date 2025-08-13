@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { LogIn, User, Phone, CreditCard, AlertCircle } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import React, { useState } from "react";
+import { LogIn, User, Phone, CreditCard, AlertCircle } from "lucide-react";
+import { useAuth } from "../contexts/AuthContext";
 
 interface LoginFormProps {
   onNavigate: (page: string) => void;
@@ -8,52 +8,52 @@ interface LoginFormProps {
 
 const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
   const { login, loginComplainant } = useAuth();
-  const [activeTab, setActiveTab] = useState<'citizen' | 'staff'>('staff');
+  const [activeTab, setActiveTab] = useState<"citizen" | "staff">("staff");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   // Staff login form
   const [staffForm, setStaffForm] = useState({
-    email: '',
-    password: ''
+    email: "",
+    password: "",
   });
 
   // Citizen verification form
   const [citizenForm, setCitizenForm] = useState({
-    fullName: '',
-    phone: '',
-    nationalId: ''
+    fullName: "",
+    phone: "",
+    nationalId: "",
   });
 
   const handleStaffLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
-      const response = await fetch('http://localhost:3001/api/auth/login', {
-        method: 'POST',
+      const response = await fetch("http://localhost:3001/api/auth/login", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify(staffForm)
+        body: JSON.stringify(staffForm),
       });
 
       const result = await response.json();
 
       if (response.ok) {
         login(result.user, result.token);
-        if (result.user.role === 'ADMIN') {
-          onNavigate('admin-dashboard');
+        if (result.user.role === "ADMIN") {
+          onNavigate("admin-dashboard");
         } else {
-          onNavigate('employee-dashboard');
+          onNavigate("employee-dashboard");
         }
       } else {
-        setError(result.error || 'خطأ في تسجيل الدخول');
+        setError(result.error || "خطأ في تسجيل الدخول");
       }
     } catch (error) {
-      setError('خطأ في الاتصال بالخادم');
-      console.error('Login error:', error);
+      setError("خطأ في الاتصال بالخادم");
+      console.error("Login error:", error);
     } finally {
       setLoading(false);
     }
@@ -62,28 +62,31 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
   const handleCitizenVerification = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
-      const response = await fetch('http://localhost:3001/api/auth/verify-citizen', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(citizenForm)
-      });
+      const response = await fetch(
+        "http://localhost:3001/api/auth/verify-citizen",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(citizenForm),
+        }
+      );
 
       const result = await response.json();
 
       if (response.ok) {
         loginComplainant(result.complainant, result.token);
-        onNavigate('citizen-dashboard');
+        onNavigate("citizen-dashboard");
       } else {
-        setError(result.error || 'خطأ في التحقق');
+        setError(result.error || "خطأ في التحقق");
       }
     } catch (error) {
-      setError('خطأ في الاتصال بالخادم');
-      console.error('Verification error:', error);
+      setError("خطأ في الاتصال بالخادم");
+      console.error("Verification error:", error);
     } finally {
       setLoading(false);
     }
@@ -97,30 +100,28 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
           <div className="bg-blue-600 text-white p-6 text-center">
             <LogIn className="w-12 h-12 mx-auto mb-4" />
             <h1 className="text-2xl font-bold">تسجيل الدخول</h1>
-            <p className="text-blue-100 mt-2">
-              اختر نوع الحساب للدخول للنظام
-            </p>
+            <p className="text-blue-100 mt-2">اختر نوع الحساب للدخول للنظام</p>
           </div>
 
           {/* Tabs */}
           <div className="flex">
             <button
-              onClick={() => setActiveTab('staff')}
+              onClick={() => setActiveTab("staff")}
               className={`flex-1 py-4 px-6 font-medium text-center border-b-2 transition-colors ${
-                activeTab === 'staff'
-                  ? 'border-blue-500 text-blue-600 bg-blue-50'
-                  : 'border-gray-200 text-gray-500 hover:text-gray-700'
+                activeTab === "staff"
+                  ? "border-blue-500 text-blue-600 bg-blue-50"
+                  : "border-gray-200 text-gray-500 hover:text-gray-700"
               }`}
             >
               <User className="w-5 h-5 mx-auto mb-1" />
               موظف/إداري
             </button>
             <button
-              onClick={() => setActiveTab('citizen')}
+              onClick={() => setActiveTab("citizen")}
               className={`flex-1 py-4 px-6 font-medium text-center border-b-2 transition-colors ${
-                activeTab === 'citizen'
-                  ? 'border-blue-500 text-blue-600 bg-blue-50'
-                  : 'border-gray-200 text-gray-500 hover:text-gray-700'
+                activeTab === "citizen"
+                  ? "border-blue-500 text-blue-600 bg-blue-50"
+                  : "border-gray-200 text-gray-500 hover:text-gray-700"
               }`}
             >
               <Phone className="w-5 h-5 mx-auto mb-1" />
@@ -136,7 +137,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
               </div>
             )}
 
-            {activeTab === 'staff' ? (
+            {activeTab === "staff" ? (
               /* Staff Login Form */
               <form onSubmit={handleStaffLogin} className="space-y-4">
                 <div>
@@ -146,10 +147,12 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
                   <input
                     type="email"
                     value={staffForm.email}
-                    onChange={(e) => setStaffForm(prev => ({
-                      ...prev,
-                      email: e.target.value
-                    }))}
+                    onChange={(e) =>
+                      setStaffForm((prev) => ({
+                        ...prev,
+                        email: e.target.value,
+                      }))
+                    }
                     required
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="admin@abuttig.gov"
@@ -163,10 +166,12 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
                   <input
                     type="password"
                     value={staffForm.password}
-                    onChange={(e) => setStaffForm(prev => ({
-                      ...prev,
-                      password: e.target.value
-                    }))}
+                    onChange={(e) =>
+                      setStaffForm((prev) => ({
+                        ...prev,
+                        password: e.target.value,
+                      }))
+                    }
                     required
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="كلمة المرور"
@@ -178,7 +183,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
                   disabled={loading}
                   className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {loading ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول'}
+                  {loading ? "جاري تسجيل الدخول..." : "تسجيل الدخول"}
                 </button>
 
                 <div className="text-center mt-4">
@@ -198,10 +203,12 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
                   <input
                     type="text"
                     value={citizenForm.fullName}
-                    onChange={(e) => setCitizenForm(prev => ({
-                      ...prev,
-                      fullName: e.target.value
-                    }))}
+                    onChange={(e) =>
+                      setCitizenForm((prev) => ({
+                        ...prev,
+                        fullName: e.target.value,
+                      }))
+                    }
                     required
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="أدخل اسمك الكامل"
@@ -216,10 +223,12 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
                   <input
                     type="tel"
                     value={citizenForm.phone}
-                    onChange={(e) => setCitizenForm(prev => ({
-                      ...prev,
-                      phone: e.target.value
-                    }))}
+                    onChange={(e) =>
+                      setCitizenForm((prev) => ({
+                        ...prev,
+                        phone: e.target.value,
+                      }))
+                    }
                     required
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="01xxxxxxxxx"
@@ -234,10 +243,12 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
                   <input
                     type="text"
                     value={citizenForm.nationalId}
-                    onChange={(e) => setCitizenForm(prev => ({
-                      ...prev,
-                      nationalId: e.target.value
-                    }))}
+                    onChange={(e) =>
+                      setCitizenForm((prev) => ({
+                        ...prev,
+                        nationalId: e.target.value,
+                      }))
+                    }
                     required
                     maxLength={14}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -250,11 +261,14 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
                   disabled={loading}
                   className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {loading ? 'جاري التحقق...' : 'تسجيل الدخول'}
+                  {loading ? "جاري التحقق..." : "تسجيل الدخول"}
                 </button>
 
                 <div className="text-center mt-4">
-                  <p className="text-xs text-gray-500">
+                  <p className="text-sm text-gray-600">
+                    للتجربة: أحمد الأمير / 30201452369852 / 01236528471
+                  </p>
+                  <p className="text-xs text-gray-500 mt-2">
                     * سيتم التحقق من بياناتك وإنشاء حساب إذا لم يكن موجوداً
                   </p>
                 </div>
@@ -263,7 +277,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
 
             <div className="text-center mt-6">
               <button
-                onClick={() => onNavigate('home')}
+                onClick={() => onNavigate("home")}
                 className="text-blue-600 hover:text-blue-800 text-sm font-medium"
               >
                 العودة للصفحة الرئيسية
