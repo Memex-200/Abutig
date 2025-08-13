@@ -1,37 +1,25 @@
 #!/bin/bash
 
-echo "========================================"
-echo "   نظام إدارة الشكاوى البلدية"
-echo "========================================"
-echo
+# Install dependencies
+echo "Installing dependencies..."
+npm run install:all
 
-echo "بدء تشغيل النظام..."
-echo
+# Generate Prisma client
+echo "Generating Prisma client..."
+npm run db:generate
 
-echo "1. تشغيل الخادم الخلفي..."
-cd server && npm start &
-BACKEND_PID=$!
+# Push database schema
+echo "Pushing database schema..."
+npm run db:push
 
-echo "2. انتظار 5 ثوانٍ..."
-sleep 5
+# Seed database
+echo "Seeding database..."
+npm run db:seed
 
-echo "3. تشغيل الواجهة الأمامية..."
-cd .. && npm run dev &
-FRONTEND_PID=$!
+# Build frontend
+echo "Building frontend..."
+npm run build
 
-echo
-echo "========================================"
-echo "تم تشغيل النظام بنجاح!"
-echo
-echo "الواجهة الأمامية: http://localhost:5173"
-echo "الخادم الخلفي: http://localhost:3001"
-echo
-echo "حسابات الإدارة:"
-echo "- emanhassanmahmoud1@gmail.com / admin123"
-echo "- karemelolary8@gmail.com / admin123"
-echo "========================================"
-echo
-
-# Wait for user to press Ctrl+C
-trap "echo 'إيقاف الخوادم...'; kill $BACKEND_PID $FRONTEND_PID; exit" INT
-wait 
+# Start the application
+echo "Starting the application..."
+npm run start:full 
