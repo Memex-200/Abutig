@@ -88,31 +88,14 @@ interface ComplaintType {
   isActive: boolean;
 }
 
-interface Stats {
-  totalComplaints: number;
-  newComplaints: number;
-  inProgressComplaints: number;
-  resolvedComplaints: number;
-  totalUsers: number;
-  activeUsers: number;
-  complaintsByType: Array<{
-    type: string;
-    count: number;
-  }>;
-  complaintsByStatus: Array<{
-    status: string;
-    count: number;
-  }>;
-  overdueComplaints: number;
-  avgResolutionTime: number;
-}
+
 
 const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<
     "overview" | "users" | "complaints" | "types" | "settings"
   >("overview");
-  const [stats, setStats] = useState<Stats | null>(null);
+
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [complaintTypes, setComplaintTypes] = useState<ComplaintType[]>([]);
@@ -129,6 +112,10 @@ const AdminDashboard: React.FC = () => {
     nationalId: "",
     role: "EMPLOYEE" as "EMPLOYEE" | "ADMIN",
     password: "",
+  });
+  const [statusUpdateForm, setStatusUpdateForm] = useState({
+    status: "",
+    notes: "",
   });
   const [complaintFilters, setComplaintFilters] = useState({
     status: "",
@@ -156,9 +143,6 @@ const AdminDashboard: React.FC = () => {
       if (!token) return;
 
       switch (activeTab) {
-        case "overview":
-          await fetchStats(token);
-          break;
         case "users":
           await fetchUsers(token);
           break;
@@ -176,22 +160,7 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const fetchStats = async (token: string) => {
-    try {
-      const response = await fetch(
-        "http://localhost:3001/api/stats/dashboard",
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      }
-    } catch (error) {
-      console.error("Error fetching stats:", error);
-    }
-  };
+
 
   const fetchComplaints = async (token: string) => {
     try {
@@ -267,6 +236,53 @@ const AdminDashboard: React.FC = () => {
     } catch (error) {
       console.error("Error creating user:", error);
       alert("حدث خطأ أثناء إنشاء المستخدم");
+    }
+  };
+
+  const handleUpdateComplaintStatus = async () => {
+    if (!selectedComplaint || !statusUpdateForm.status) return;
+
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
+
+      const response = await fetch(
+        `http://localhost:3001/api/complaints/${selectedComplaint.id}/status`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            status: statusUpdateForm.status,
+            notes: statusUpdateForm.notes,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        alert("تم تحديث حالة الشكوى بنجاح");
+
+        // Update the selected complaint with new status
+        setSelectedComplaint({
+          ...selectedComplaint,
+          status: statusUpdateForm.status,
+        });
+
+        // Reset form
+        setStatusUpdateForm({ status: "", notes: "" });
+
+        // Refresh data
+        await fetchData();
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        alert(errorData.error || "فشل تحديث حالة الشكوى");
+      }
+    } catch (error) {
+      console.error("Error updating complaint status:", error);
+      alert("حدث خطأ أثناء تحديث حالة الشكوى");
     }
   };
 
@@ -418,20 +434,7 @@ const AdminDashboard: React.FC = () => {
               </h1>
               <p className="text-gray-600">مرحباً، {user.fullName}</p>
             </div>
-            <div className="flex items-center space-x-reverse space-x-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">
-                  {stats?.totalComplaints || 0}
-                </div>
-                <div className="text-sm text-gray-600">إجمالي الشكاوى</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  {stats?.resolvedComplaints || 0}
-                </div>
-                <div className="text-sm text-gray-600">تم حلها</div>
-              </div>
-            </div>
+
           </div>
         </div>
       </div>
@@ -471,150 +474,64 @@ const AdminDashboard: React.FC = () => {
           <div className="p-6">
             {activeTab === "overview" && (
               <div className="space-y-6">
-                {/* Statistics Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="bg-white p-6 rounded-lg border border-gray-200">
-                    <div className="flex items-center">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <FileText className="w-6 h-6 text-blue-600" />
-                      </div>
-                      <div className="mr-4">
-                        <p className="text-sm font-medium text-gray-600">
-                          إجمالي الشكاوى
-                        </p>
-                        <p className="text-2xl font-bold text-gray-900">
-                          {stats?.totalComplaints || 0}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-white p-6 rounded-lg border border-gray-200">
-                    <div className="flex items-center">
-                      <div className="p-2 bg-green-100 rounded-lg">
-                        <CheckCircle className="w-6 h-6 text-green-600" />
-                      </div>
-                      <div className="mr-4">
-                        <p className="text-sm font-medium text-gray-600">
-                          تم حلها
-                        </p>
-                        <p className="text-2xl font-bold text-gray-900">
-                          {stats?.resolvedComplaints || 0}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-white p-6 rounded-lg border border-gray-200">
-                    <div className="flex items-center">
-                      <div className="p-2 bg-yellow-100 rounded-lg">
-                        <Clock className="w-6 h-6 text-yellow-600" />
-                      </div>
-                      <div className="mr-4">
-                        <p className="text-sm font-medium text-gray-600">
-                          قيد المعالجة
-                        </p>
-                        <p className="text-2xl font-bold text-gray-900">
-                          {stats?.inProgressComplaints || 0}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-white p-6 rounded-lg border border-gray-200">
-                    <div className="flex items-center">
-                      <div className="p-2 bg-red-100 rounded-lg">
-                        <AlertCircle className="w-6 h-6 text-red-600" />
-                      </div>
-                      <div className="mr-4">
-                        <p className="text-sm font-medium text-gray-600">
-                          متأخرة
-                        </p>
-                        <p className="text-2xl font-bold text-gray-900">
-                          {stats?.overdueComplaints || 0}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                {/* Welcome Message */}
+                <div className="bg-white p-6 rounded-lg border border-gray-200">
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">
+                    مرحباً بك في لوحة تحكم المدير
+                  </h3>
+                  <p className="text-gray-600">
+                    يمكنك إدارة الشكاوى والمستخدمين وأنواع الشكاوى من خلال التبويبات أدناه.
+                  </p>
                 </div>
 
-                {/* Charts */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Complaints by Type */}
-                  <div className="bg-white p-6 rounded-lg border border-gray-200">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">
-                      الشكاوى حسب النوع
-                    </h3>
-                    <div className="space-y-3">
-                      {stats?.complaintsByType?.map((item) => (
-                        <div
-                          key={item.type}
-                          className="flex items-center justify-between"
-                        >
-                          <span className="text-sm text-gray-600">
-                            {item.type}
-                          </span>
-                          <div className="flex items-center">
-                            <div className="w-32 bg-gray-200 rounded-full h-2 ml-2">
-                              <div
-                                className="bg-blue-600 h-2 rounded-full"
-                                style={{
-                                  width: `${
-                                    (item.count /
-                                      (stats?.totalComplaints || 1)) *
-                                    100
-                                  }%`,
-                                }}
-                              ></div>
-                            </div>
-                            <span className="text-sm font-medium text-gray-900 w-8 text-right">
-                              {item.count}
-                            </span>
-                          </div>
-                        </div>
-                      )) || (
-                        <div className="text-center text-gray-500 py-4">
-                          لا توجد بيانات متاحة
-                        </div>
-                      )}
-                    </div>
+                {/* Quick Actions */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-white p-6 rounded-lg border border-gray-200 text-center">
+                    <FileText className="w-12 h-12 text-blue-600 mx-auto mb-4" />
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">
+                      إدارة الشكاوى
+                    </h4>
+                    <p className="text-gray-600 mb-4">
+                      عرض وإدارة جميع الشكاوى المقدمة
+                    </p>
+                    <button
+                      onClick={() => setActiveTab("complaints")}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                    >
+                      عرض الشكاوى
+                    </button>
                   </div>
 
-                  {/* Complaints by Status */}
-                  <div className="bg-white p-6 rounded-lg border border-gray-200">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">
-                      الشكاوى حسب الحالة
-                    </h3>
-                    <div className="space-y-3">
-                      {stats?.complaintsByStatus?.map((item) => (
-                        <div
-                          key={item.status}
-                          className="flex items-center justify-between"
-                        >
-                          <span className="text-sm text-gray-600">
-                            {item.status}
-                          </span>
-                          <div className="flex items-center">
-                            <div className="w-32 bg-gray-200 rounded-full h-2 ml-2">
-                              <div
-                                className="bg-green-600 h-2 rounded-full"
-                                style={{
-                                  width: `${
-                                    (item.count /
-                                      (stats?.totalComplaints || 1)) *
-                                    100
-                                  }%`,
-                                }}
-                              ></div>
-                            </div>
-                            <span className="text-sm font-medium text-gray-900 w-8 text-right">
-                              {item.count}
-                            </span>
-                          </div>
-                        </div>
-                      )) || (
-                        <div className="text-center text-gray-500 py-4">
-                          لا توجد بيانات متاحة
-                        </div>
-                      )}
-                    </div>
+                  <div className="bg-white p-6 rounded-lg border border-gray-200 text-center">
+                    <Users className="w-12 h-12 text-green-600 mx-auto mb-4" />
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">
+                      إدارة المستخدمين
+                    </h4>
+                    <p className="text-gray-600 mb-4">
+                      إضافة وتعديل حسابات الموظفين
+                    </p>
+                    <button
+                      onClick={() => setActiveTab("users")}
+                      className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
+                    >
+                      إدارة المستخدمين
+                    </button>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-lg border border-gray-200 text-center">
+                    <Settings className="w-12 h-12 text-purple-600 mx-auto mb-4" />
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">
+                      أنواع الشكاوى
+                    </h4>
+                    <p className="text-gray-600 mb-4">
+                      إدارة أنواع الشكاوى المتاحة
+                    </p>
+                    <button
+                      onClick={() => setActiveTab("types")}
+                      className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700"
+                    >
+                      إدارة الأنواع
+                    </button>
                   </div>
                 </div>
 
@@ -1305,6 +1222,63 @@ const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
                   )}
+
+                {/* Status Update Section */}
+                <div className="border-t pt-4">
+                  <h4 className="text-lg font-medium text-gray-900 mb-4">
+                    تحديث حالة الشكوى
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        الحالة الجديدة
+                      </label>
+                      <select
+                        value={statusUpdateForm.status}
+                        onChange={(e) =>
+                          setStatusUpdateForm({
+                            ...statusUpdateForm,
+                            status: e.target.value,
+                          })
+                        }
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      >
+                        <option value="">اختر الحالة</option>
+                        <option value="UNRESOLVED">غير محلولة</option>
+                        <option value="IN_PROGRESS">قيد المعالجة</option>
+                        <option value="BEING_RESOLVED">يتم حلها الآن</option>
+                        <option value="OVERDUE">متأخرة</option>
+                        <option value="RESOLVED">تم الحل</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        ملاحظات (اختياري)
+                      </label>
+                      <input
+                        type="text"
+                        value={statusUpdateForm.notes}
+                        onChange={(e) =>
+                          setStatusUpdateForm({
+                            ...statusUpdateForm,
+                            notes: e.target.value,
+                          })
+                        }
+                        placeholder="أضف ملاحظات حول التحديث..."
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <button
+                      onClick={handleUpdateComplaintStatus}
+                      disabled={!statusUpdateForm.status}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    >
+                      تحديث الحالة
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="mt-6 flex justify-end">

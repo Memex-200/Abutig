@@ -8,6 +8,8 @@ import {
   LogOut,
   User,
   Bell,
+  Menu,
+  X,
 } from "lucide-react";
 import HomePage from "./components/HomePage";
 import ComplaintForm from "./components/ComplaintForm";
@@ -22,6 +24,8 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 const AppContent: React.FC = () => {
   const { user, logout, userType, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState("home");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  
   // One-time: derive initial page from URL path to support direct links like /complaint-form
   useEffect(() => {
     const path = window.location.pathname;
@@ -71,6 +75,7 @@ const AppContent: React.FC = () => {
 
   const handleNavigation = (page: string) => {
     setCurrentPage(page);
+    setMobileMenuOpen(false); // Close mobile menu when navigating
     // Keep the URL in sync for direct reloads
     const pageToPath: Record<string, string> = {
       home: "/",
@@ -90,6 +95,7 @@ const AppContent: React.FC = () => {
   const handleLogout = () => {
     logout();
     setCurrentPage("home");
+    setMobileMenuOpen(false);
   };
 
   const renderCurrentPage = () => {
@@ -128,19 +134,21 @@ const AppContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b">
+      <header className="bg-white shadow-sm border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
+            {/* Logo and Title */}
             <div className="flex items-center space-x-reverse space-x-4">
               <div className="flex items-center">
                 <FileText className="h-8 w-8 text-blue-600 ml-2" />
-                <h1 className="text-xl font-bold text-gray-900">
+                <h1 className="text-lg sm:text-xl font-bold text-gray-900">
                   مركز مدينة أبوتيج
                 </h1>
               </div>
             </div>
 
-            <nav className="flex items-center space-x-reverse space-x-4">
+            {/* Desktop Navigation */}
+            <nav className="hidden md:flex items-center space-x-reverse space-x-4">
               <button
                 onClick={() => handleNavigation("home")}
                 className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -196,7 +204,7 @@ const AppContent: React.FC = () => {
 
               {(user || userType === "complainant") && (
                 <div className="flex items-center space-x-reverse space-x-2">
-                  <span className="text-sm text-gray-600">
+                  <span className="text-sm text-gray-600 hidden sm:block">
                     {user?.fullName || "مواطن"}
                   </span>
                   <button
@@ -204,13 +212,112 @@ const AppContent: React.FC = () => {
                     className="flex items-center px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md transition-colors"
                   >
                     <LogOut className="w-4 h-4 ml-1" />
-                    تسجيل الخروج
+                    <span className="hidden sm:inline">تسجيل الخروج</span>
                   </button>
                 </div>
               )}
             </nav>
+
+            {/* Mobile menu button */}
+            <div className="md:hidden">
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="flex items-center px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md"
+              >
+                {mobileMenuOpen ? (
+                  <X className="w-6 h-6" />
+                ) : (
+                  <Menu className="w-6 h-6" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Mobile Navigation Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden bg-white border-t border-gray-200">
+            <div className="px-2 pt-2 pb-3 space-y-1">
+              <button
+                onClick={() => handleNavigation("home")}
+                className={`block w-full text-right px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                  currentPage === "home"
+                    ? "bg-blue-100 text-blue-700"
+                    : "text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                <div className="flex items-center">
+                  <Home className="w-5 h-5 ml-2" />
+                  الرئيسية
+                </div>
+              </button>
+
+              {(user || userType === "complainant") && (
+                <button
+                  onClick={() => handleNavigation(getDashboardPage())}
+                  className={`block w-full text-right px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                    currentPage.includes("dashboard")
+                      ? "bg-blue-100 text-blue-700"
+                      : "text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  <div className="flex items-center">
+                    <User className="w-5 h-5 ml-2" />
+                    لوحة التحكم
+                  </div>
+                </button>
+              )}
+
+              {!user && userType !== "complainant" && (
+                <>
+                  <button
+                    onClick={() => handleNavigation("login")}
+                    className={`block w-full text-right px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                      currentPage === "login"
+                        ? "bg-blue-100 text-blue-700"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                  >
+                    <div className="flex items-center">
+                      <LogIn className="w-5 h-5 ml-2" />
+                      موظف/أدمن
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => handleNavigation("citizen-login")}
+                    className={`block w-full text-right px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                      currentPage === "citizen-login"
+                        ? "bg-blue-100 text-blue-700"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                  >
+                    <div className="flex items-center">
+                      <User className="w-5 h-5 ml-2" />
+                      مواطن
+                    </div>
+                  </button>
+                </>
+              )}
+
+              {(user || userType === "complainant") && (
+                <div className="border-t border-gray-200 pt-2">
+                  <div className="px-3 py-2 text-sm text-gray-600">
+                    {user?.fullName || "مواطن"}
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="block w-full text-right px-3 py-2 text-base text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                  >
+                    <div className="flex items-center">
+                      <LogOut className="w-5 h-5 ml-2" />
+                      تسجيل الخروج
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Main Content */}
@@ -220,10 +327,10 @@ const AppContent: React.FC = () => {
       <footer className="bg-gray-800 text-white py-8 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
-            <p className="text-gray-300">
+            <p className="text-gray-300 text-sm sm:text-base">
               © 2025 مركز مدينة أبوتيج - مجلس مدينة أبوتيج
             </p>
-            <p className="text-gray-400 text-sm mt-2">جميع الحقوق محفوظة</p>
+            <p className="text-gray-400 text-xs sm:text-sm mt-2">جميع الحقوق محفوظة</p>
           </div>
         </div>
       </footer>

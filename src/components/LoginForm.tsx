@@ -185,12 +185,6 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
                 >
                   {loading ? "جاري تسجيل الدخول..." : "تسجيل الدخول"}
                 </button>
-
-                <div className="text-center mt-4">
-                  <p className="text-sm text-gray-600">
-                    للتجربة: emanhassanmahmoud1@gmail.com / Emovmmm#951753
-                  </p>
-                </div>
               </form>
             ) : (
               /* Citizen Verification Form */
@@ -265,9 +259,6 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
                 </button>
 
                 <div className="text-center mt-4">
-                  <p className="text-sm text-gray-600">
-                    للتجربة: أحمد الأمير / 30201452369852 / 01236528471
-                  </p>
                   <p className="text-xs text-gray-500 mt-2">
                     * سيتم التحقق من بياناتك وإنشاء حساب إذا لم يكن موجوداً
                   </p>

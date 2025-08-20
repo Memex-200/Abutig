@@ -1,10 +1,9 @@
 const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
 const { isAdminUser } = require("../config/admin");
+const { JWT_CONFIG } = require("../config/security");
 
 const prisma = new PrismaClient();
-const JWT_SECRET =
-  process.env.JWT_SECRET || "your-secret-key-change-in-production";
 
 const authenticateToken = async (req, res, next) => {
   try {
@@ -15,7 +14,23 @@ const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ error: "رمز الوصول مطلوب" });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    // Verify JWT with proper configuration
+    const verifyOptions = {
+      issuer: JWT_CONFIG.issuer,
+      algorithms: [JWT_CONFIG.algorithm]
+    };
+
+    let decoded;
+    try {
+      if (JWT_CONFIG.algorithm === 'RS256' && JWT_CONFIG.publicKey) {
+        decoded = jwt.verify(token, JWT_CONFIG.publicKey, verifyOptions);
+      } else {
+        decoded = jwt.verify(token, JWT_CONFIG.secret, verifyOptions);
+      }
+    } catch (jwtError) {
+      console.error("JWT verification error:", jwtError);
+      return res.status(401).json({ error: "رمز وصول غير صالح أو منتهي الصلاحية" });
+    }
 
     // Check if userId or complainantId exists in the decoded token
     if (!decoded.userId && !decoded.complainantId) {
@@ -67,7 +82,7 @@ const authenticateToken = async (req, res, next) => {
     });
 
     if (!user || !user.isActive) {
-      return res.status(401).json({ error: "مستخدم غير صالح" });
+      return res.status(401).json({ error: "مستخدم غير صالح أو غير نشط" });
     }
 
     // Check if user is admin using the configuration system
@@ -166,6 +181,39 @@ const requireOwnerOrAdmin = (resourceType = 'complaint') => {
   };
 };
 
+// Generate JWT tokens with proper configuration
+const generateTokens = (payload) => {
+  const signOptions = {
+    issuer: JWT_CONFIG.issuer,
+    audience: JWT_CONFIG.audience,
+    algorithm: JWT_CONFIG.algorithm
+  };
+
+  let accessToken, refreshToken;
+
+  if (JWT_CONFIG.algorithm === 'RS256' && JWT_CONFIG.privateKey) {
+    accessToken = jwt.sign(payload, JWT_CONFIG.privateKey, {
+      ...signOptions,
+      expiresIn: JWT_CONFIG.accessTokenExpiry
+    });
+    refreshToken = jwt.sign(payload, JWT_CONFIG.privateKey, {
+      ...signOptions,
+      expiresIn: JWT_CONFIG.refreshTokenExpiry
+    });
+  } else {
+    accessToken = jwt.sign(payload, JWT_CONFIG.secret, {
+      ...signOptions,
+      expiresIn: JWT_CONFIG.accessTokenExpiry
+    });
+    refreshToken = jwt.sign(payload, JWT_CONFIG.secret, {
+      ...signOptions,
+      expiresIn: JWT_CONFIG.refreshTokenExpiry
+    });
+  }
+
+  return { accessToken, refreshToken };
+};
+
 // Rate limiting middleware for sensitive endpoints
 const rateLimit = require('express-rate-limit');
 
@@ -191,9 +239,10 @@ module.exports = {
   requireRole,
   requireAdmin,
   requireOwnerOrAdmin,
+  generateTokens,
   createRateLimiter,
   authRateLimiter,
   complaintSubmissionRateLimiter,
   adminActionRateLimiter,
-  JWT_SECRET,
+  JWT_CONFIG,
 };

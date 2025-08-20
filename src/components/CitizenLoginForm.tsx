@@ -180,12 +180,6 @@ const CitizenLoginForm: React.FC<CitizenLoginFormProps> = ({ onNavigate }) => {
                 )}
               </button>
             </div>
-
-            <div className="text-center mt-4">
-              <p className="text-sm text-gray-600">
-                للتجربة: أحمد الأمير / 30201452369852 / 01236528471
-              </p>
-            </div>
           </div>
         </div>
 

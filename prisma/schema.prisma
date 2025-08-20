@@ -19,8 +19,6 @@ enum UserRole {
 enum ComplaintStatus {
   UNRESOLVED
   IN_PROGRESS
-  BEING_RESOLVED
-  OVERDUE
   RESOLVED
 }
 

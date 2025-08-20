@@ -46,7 +46,7 @@ router.get(
         prisma.complaint.count({
           where: {
             ...filters,
-            status: { in: ["UNRESOLVED", "IN_PROGRESS", "BEING_RESOLVED"] },
+            status: { in: ["IN_PROGRESS", "BEING_RESOLVED"] },
           },
         }),
 
@@ -198,7 +198,7 @@ router.get(
         where: { isActive: true },
       });
 
-      res.json({
+      const statsData = {
         totalComplaints,
         newComplaints,
         inProgressComplaints,
@@ -212,7 +212,10 @@ router.get(
         })),
         overdueComplaints,
         avgResolutionTime: Math.round(avgResolutionTime * 100) / 100,
-      });
+      };
+
+      console.log("Dashboard stats:", statsData);
+      res.json(statsData);
     } catch (error) {
       console.error("Get stats error:", error);
       res.status(500).json({ error: "خطأ في جلب الإحصائيات" });

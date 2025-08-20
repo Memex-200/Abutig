@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const { PrismaClient } = require('@prisma/client');
-const { JWT_SECRET } = require('../middleware/auth');
+const { JWT_CONFIG } = require('../config/security');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -48,8 +48,11 @@ router.post('/verify-citizen', [
     // Generate access token for complainant
     const token = jwt.sign(
       { complainantId: complainant.id, type: 'complainant' },
-      JWT_SECRET,
-      { expiresIn: '24h' }
+      JWT_CONFIG.secret,
+      { 
+        expiresIn: '24h',
+        issuer: JWT_CONFIG.issuer
+      }
     );
 
     res.json({
@@ -103,8 +106,11 @@ router.post('/login', [
 
     const token = jwt.sign(
       { userId: user.id, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '8h' }
+      JWT_CONFIG.secret,
+      { 
+        expiresIn: '8h',
+        issuer: JWT_CONFIG.issuer
+      }
     );
 
     res.json({

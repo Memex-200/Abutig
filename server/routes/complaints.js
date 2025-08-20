@@ -13,9 +13,16 @@ const {
   adminActionRateLimiter,
 } = require("../middleware/auth");
 const {
+  complaintValidation,
+  validateFileUpload,
+  auditLog,
+  sanitizePrismaQuery
+} = require("../middleware/security");
+const {
   sendComplaintNotification,
   sendStatusUpdateNotification,
 } = require("../utils/email");
+const { FILE_UPLOAD_CONFIG } = require("../config/security");
 const XLSX = require("xlsx");
 
 const router = express.Router();
@@ -24,44 +31,34 @@ const prisma = new PrismaClient();
 // Configure multer for file uploads with enhanced security
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, "../uploads");
+    const uploadDir = FILE_UPLOAD_CONFIG.uploadPath;
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    // Sanitize filename to prevent path traversal attacks
-    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + "-" + sanitizedName);
+    // Use secure filename generation
+    const randomFilename = FILE_UPLOAD_CONFIG.generateRandomFilename(file.originalname);
+    cb(null, randomFilename);
   },
 });
 
 const upload = multer({
   storage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB
+    fileSize: FILE_UPLOAD_CONFIG.maxFileSize,
     files: 5, // Maximum 5 files
   },
   fileFilter: (req, file, cb) => {
     // Enhanced file type validation
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/gif",
-      "application/pdf",
-    ];
-
-    // Check MIME type
-    if (!allowedTypes.includes(file.mimetype)) {
+    if (!FILE_UPLOAD_CONFIG.allowedMimeTypes.includes(file.mimetype)) {
       return cb(new Error("نوع الملف غير مدعوم"));
     }
 
     // Check file extension
-    const allowedExtensions = [".jpg", ".jpeg", ".png", ".gif", ".pdf"];
     const fileExtension = path.extname(file.originalname).toLowerCase();
-    if (!allowedExtensions.includes(fileExtension)) {
+    if (!FILE_UPLOAD_CONFIG.allowedExtensions.includes(fileExtension)) {
       return cb(new Error("امتداد الملف غير مدعوم"));
     }
 
@@ -69,42 +66,16 @@ const upload = multer({
   },
 });
 
-// Submit new complaint with rate limiting
+// Submit new complaint with rate limiting and security
 router.post(
   "/submit",
   complaintSubmissionRateLimiter,
   upload.array("files", 5),
-  [
-    body("fullName")
-      .isLength({ min: 2, max: 100 })
-      .withMessage("الاسم مطلوب (2-100 حرف)"),
-    body("phone").isMobilePhone("ar-EG").withMessage("رقم هاتف غير صالح"),
-    body("nationalId")
-      .isLength({ min: 14, max: 14 })
-      .withMessage("الرقم القومي يجب أن يكون 14 رقم"),
-    body("typeId").notEmpty().withMessage("نوع الشكوى مطلوب"),
-    body("title")
-      .isLength({ min: 5, max: 200 })
-      .withMessage("عنوان الشكوى مطلوب (5-200 حرف)"),
-    body("description")
-      .isLength({ min: 10, max: 2000 })
-      .withMessage("وصف الشكوى مطلوب (10-2000 حرف)"),
-    body("location")
-      .optional()
-      .isLength({ max: 500 })
-      .withMessage("الموقع يجب أن يكون أقل من 500 حرف"),
-    body("email").optional().isEmail().withMessage("بريد إلكتروني غير صالح"),
-  ],
+  validateFileUpload,
+  complaintValidation,
+  auditLog('complaint.create'),
   async (req, res) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          error: "بيانات غير صالحة",
-          details: errors.array(),
-        });
-      }
-
       const {
         fullName,
         phone,
@@ -116,9 +87,21 @@ router.post(
         email,
       } = req.body;
 
+      // Sanitize inputs
+      const sanitizedData = {
+        fullName: sanitizePrismaQuery(fullName),
+        phone: sanitizePrismaQuery(phone),
+        nationalId: sanitizePrismaQuery(nationalId),
+        typeId: sanitizePrismaQuery(typeId),
+        title: sanitizePrismaQuery(title),
+        description: sanitizePrismaQuery(description),
+        location: location ? sanitizePrismaQuery(location) : null,
+        email: email ? sanitizePrismaQuery(email) : null,
+      };
+
       // Validate complaint type exists
       const complaintType = await prisma.complaintType.findUnique({
-        where: { id: typeId, isActive: true },
+        where: { id: sanitizedData.typeId, isActive: true },
       });
 
       if (!complaintType) {
@@ -128,17 +111,17 @@ router.post(
       // Check if complainant exists, create if not
       let complainant = await prisma.complainant.findFirst({
         where: {
-          OR: [{ phone }, { nationalId }],
+          OR: [{ phone: sanitizedData.phone }, { nationalId: sanitizedData.nationalId }],
         },
       });
 
       if (!complainant) {
         complainant = await prisma.complainant.create({
           data: {
-            fullName,
-            phone,
-            nationalId,
-            email: email || null,
+            fullName: sanitizedData.fullName,
+            phone: sanitizedData.phone,
+            nationalId: sanitizedData.nationalId,
+            email: sanitizedData.email,
           },
         });
       }
@@ -147,10 +130,10 @@ router.post(
       const complaint = await prisma.complaint.create({
         data: {
           complainantId: complainant.id,
-          typeId,
-          title,
-          description,
-          location: location || null,
+          typeId: sanitizedData.typeId,
+          title: sanitizedData.title,
+          description: sanitizedData.description,
+          location: sanitizedData.location,
           status: "UNRESOLVED",
           createdByUserId: req.user?.id || null,
         },
@@ -219,6 +202,7 @@ router.post(
 router.get(
   "/",
   authenticateToken,
+  auditLog('complaint.list'),
   [
     query("page").optional().isInt({ min: 1 }),
     query("limit").optional().isInt({ min: 1, max: 100 }),
@@ -252,7 +236,7 @@ router.get(
       const filters = {};
 
       if (req.query.status) filters.status = req.query.status;
-      if (req.query.typeId) filters.typeId = req.query.typeId;
+      if (req.query.typeId) filters.typeId = sanitizePrismaQuery(req.query.typeId);
 
       // Enhanced role-based filtering with security
       if (req.user.role === "EMPLOYEE") {
@@ -266,7 +250,7 @@ router.get(
 
       // Search functionality with sanitization
       if (req.query.search) {
-        const searchTerm = req.query.search.trim();
+        const searchTerm = sanitizePrismaQuery(req.query.search.trim());
         if (searchTerm.length > 0) {
           filters.OR = [
             { title: { contains: searchTerm } },
