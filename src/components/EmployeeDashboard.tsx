@@ -100,16 +100,16 @@ const EmployeeDashboard: React.FC = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "NEW":
+      case "UNRESOLVED":
         return "bg-blue-100 text-blue-800";
-      case "UNDER_REVIEW":
-        return "bg-yellow-100 text-yellow-800";
       case "IN_PROGRESS":
+        return "bg-yellow-100 text-yellow-800";
+      case "BEING_RESOLVED":
         return "bg-purple-100 text-purple-800";
+      case "OVERDUE":
+        return "bg-red-100 text-red-800";
       case "RESOLVED":
         return "bg-green-100 text-green-800";
-      case "REJECTED":
-        return "bg-red-100 text-red-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -117,16 +117,16 @@ const EmployeeDashboard: React.FC = () => {
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case "NEW":
-        return "جديد";
-      case "UNDER_REVIEW":
-        return "قيد المراجعة";
+      case "UNRESOLVED":
+        return "غير محلولة";
       case "IN_PROGRESS":
-        return "جار المعالجة";
+        return "قيد التنفيذ";
+      case "BEING_RESOLVED":
+        return "يتم حلها الآن";
+      case "OVERDUE":
+        return "متأخرة";
       case "RESOLVED":
         return "تم الحل";
-      case "REJECTED":
-        return "مرفوض";
       default:
         return status;
     }
@@ -318,7 +318,7 @@ const EmployeeDashboard: React.FC = () => {
                 قيد المعالجة (
                 {
                   complaints.filter((c) =>
-                    ["UNDER_REVIEW", "IN_PROGRESS"].includes(c.status)
+                    ["UNRESOLVED", "IN_PROGRESS", "BEING_RESOLVED"].includes(c.status)
                   ).length
                 }
                 )
@@ -761,10 +761,11 @@ const EmployeeDashboard: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="">اختر الحالة</option>
-                    <option value="UNDER_REVIEW">قيد المراجعة</option>
-                    <option value="IN_PROGRESS">جار المعالجة</option>
+                    <option value="UNRESOLVED">غير محلولة</option>
+                    <option value="IN_PROGRESS">قيد التنفيذ</option>
+                    <option value="BEING_RESOLVED">يتم حلها الآن</option>
+                    <option value="OVERDUE">متأخرة</option>
                     <option value="RESOLVED">تم الحل</option>
-                    <option value="REJECTED">مرفوض</option>
                   </select>
                 </div>
 

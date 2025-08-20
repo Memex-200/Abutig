@@ -34,11 +34,11 @@ router.get(
         // Total complaints
         prisma.complaint.count({ where: filters }),
 
-        // New complaints
+        // New complaints (unresolved)
         prisma.complaint.count({
           where: {
             ...filters,
-            status: "NEW",
+            status: "UNRESOLVED",
           },
         }),
 
@@ -46,7 +46,7 @@ router.get(
         prisma.complaint.count({
           where: {
             ...filters,
-            status: { in: ["UNDER_REVIEW", "IN_PROGRESS"] },
+            status: { in: ["UNRESOLVED", "IN_PROGRESS", "BEING_RESOLVED"] },
           },
         }),
 
@@ -159,8 +159,9 @@ router.get(
           createdAt: {
             lt: sevenDaysAgo,
           },
+          // Consider overdue any complaint that is not resolved yet
           status: {
-            notIn: ["RESOLVED", "REJECTED", "CLOSED"],
+            not: "RESOLVED",
           },
         },
       });
@@ -261,12 +262,11 @@ router.get(
 // Helper functions
 function getStatusLabel(status) {
   const statusLabels = {
-    NEW: "جديد",
-    UNDER_REVIEW: "قيد المراجعة",
-    IN_PROGRESS: "جار المعالجة",
+    UNRESOLVED: "غير محلولة",
+    IN_PROGRESS: "قيد التنفيذ",
+    BEING_RESOLVED: "يتم حلها الآن",
+    OVERDUE: "متأخرة",
     RESOLVED: "تم الحل",
-    REJECTED: "مرفوض",
-    CLOSED: "مغلق",
   };
   return statusLabels[status] || status;
 }

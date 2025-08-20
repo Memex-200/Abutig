@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
+const { isAdminUser } = require("../config/admin");
 
 const prisma = new PrismaClient();
 const JWT_SECRET =
@@ -69,6 +70,17 @@ const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ error: "مستخدم غير صالح" });
     }
 
+    // Check if user is admin using the configuration system
+    const isAdmin = isAdminUser(user);
+    if (isAdmin && user.role !== 'ADMIN') {
+      // Update user role to ADMIN if they're in the admin config
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { role: 'ADMIN' }
+      });
+      user.role = 'ADMIN';
+    }
+
     req.user = user;
     next();
   } catch (error) {
@@ -92,8 +104,96 @@ const requireRole = (roles) => {
   };
 };
 
+// Enhanced authorization policies
+const requireAdmin = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "مصادقة مطلوبة" });
+  }
+
+  if (req.user.role !== 'ADMIN' && !isAdminUser(req.user)) {
+    return res.status(403).json({ error: "يتطلب صلاحيات المدير" });
+  }
+
+  next();
+};
+
+const requireOwnerOrAdmin = (resourceType = 'complaint') => {
+  return async (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: "مصادقة مطلوبة" });
+    }
+
+    // Admin can access everything
+    if (req.user.role === 'ADMIN' || isAdminUser(req.user)) {
+      return next();
+    }
+
+    // For complaints, check ownership
+    if (resourceType === 'complaint') {
+      const complaintId = req.params.id || req.params.complaintId;
+      if (!complaintId) {
+        return res.status(400).json({ error: "معرف الشكوى مطلوب" });
+      }
+
+      try {
+        const complaint = await prisma.complaint.findUnique({
+          where: { id: complaintId },
+          select: { 
+            id: true, 
+            complainantId: true, 
+            assignedToId: true 
+          }
+        });
+
+        if (!complaint) {
+          return res.status(404).json({ error: "الشكوى غير موجودة" });
+        }
+
+        // Check if user owns the complaint or is assigned to it
+        const isOwner = req.user.complainantId === complaint.complainantId;
+        const isAssigned = req.user.role === 'EMPLOYEE' && complaint.assignedToId === req.user.id;
+
+        if (!isOwner && !isAssigned) {
+          return res.status(403).json({ error: "غير مسموح لك بالوصول لهذه الشكوى" });
+        }
+      } catch (error) {
+        console.error("Ownership check error:", error);
+        return res.status(500).json({ error: "خطأ في التحقق من الصلاحيات" });
+      }
+    }
+
+    next();
+  };
+};
+
+// Rate limiting middleware for sensitive endpoints
+const rateLimit = require('express-rate-limit');
+
+const createRateLimiter = (windowMs = 15 * 60 * 1000, max = 100) => {
+  return rateLimit({
+    windowMs,
+    max,
+    message: {
+      error: "تم تجاوز الحد الأقصى للطلبات. يرجى المحاولة لاحقاً."
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+};
+
+// Specific rate limiters for different endpoints
+const authRateLimiter = createRateLimiter(15 * 60 * 1000, 5); // 5 attempts per 15 minutes
+const complaintSubmissionRateLimiter = createRateLimiter(60 * 60 * 1000, 10); // 10 complaints per hour
+const adminActionRateLimiter = createRateLimiter(5 * 60 * 1000, 50); // 50 actions per 5 minutes
+
 module.exports = {
   authenticateToken,
   requireRole,
+  requireAdmin,
+  requireOwnerOrAdmin,
+  createRateLimiter,
+  authRateLimiter,
+  complaintSubmissionRateLimiter,
+  adminActionRateLimiter,
   JWT_SECRET,
 };

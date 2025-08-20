@@ -173,12 +173,11 @@ function getNotificationMessage(action, oldStatus, newStatus, notes) {
 
 function getStatusName(status) {
   const statusNames = {
-    NEW: "جديدة",
-    UNDER_REVIEW: "قيد المراجعة",
+    UNRESOLVED: "غير محلولة",
     IN_PROGRESS: "قيد التنفيذ",
+    BEING_RESOLVED: "يتم حلها الآن",
+    OVERDUE: "متأخرة",
     RESOLVED: "تم الحل",
-    REJECTED: "مرفوضة",
-    CLOSED: "مغلقة",
   };
   return statusNames[status] || status;
 }

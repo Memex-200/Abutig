@@ -4,6 +4,7 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const path = require("path");
 const { PrismaClient } = require("@prisma/client");
+const { migrateDatabase } = require("../prisma/migrate.cjs");
 
 const authRoutes = require("./routes/auth");
 const complaintRoutes = require("./routes/complaints");
@@ -58,81 +59,26 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "OK", timestamp: new Date().toISOString() });
 });
 
-// Global error handler
+// Global error handler with enhanced security
 app.use((error, req, res, next) => {
   console.error("Error:", error);
+
+  // Don't leak sensitive information in production
+  const isDevelopment = process.env.NODE_ENV === "development";
+
   res.status(error.status || 500).json({
     error: error.message || "خطأ داخلي في الخادم",
-    ...(process.env.NODE_ENV === "development" && { stack: error.stack }),
+    ...(isDevelopment && { stack: error.stack }),
   });
 });
 
-// Initialize default data
+// Initialize default data with enhanced security
 async function initializeData() {
   try {
-    // Create default complaint types
-    const defaultTypes = [
-      {
-        name: "شكوى بناء مخالف",
-        description: "بناء بدون ترخيص أو مخالف للقوانين",
-        icon: "🏚️",
-      },
-      {
-        name: "شكوى صرف صحي",
-        description: "مشاكل في شبكة الصرف الصحي",
-        icon: "🚽",
-      },
-      {
-        name: "شكوى نظافة أو قمامة",
-        description: "تراكم القمامة أو عدم النظافة",
-        icon: "♻️",
-      },
-      {
-        name: "شكوى طريق أو رصف",
-        description: "تلف في الطرق أو الأرصفة",
-        icon: "🚧",
-      },
-      {
-        name: "شكوى إنارة",
-        description: "مشاكل في الإنارة العامة",
-        icon: "💡",
-      },
-      {
-        name: "شكوى ضعف أو انقطاع الإنترنت",
-        description: "ضعف أو انقطاع الإنترنت / الشبكة",
-        icon: "📶",
-      },
-      {
-        name: "شكوى تعديات على ممتلكات عامة",
-        description: "تعديات على الأراضي أو الممتلكات العامة",
-        icon: "🌳",
-      },
-      {
-        name: "شكوى صيانة أو كهرباء",
-        description: "مشاكل في الصيانة أو الكهرباء",
-        icon: "🛠️",
-      },
-      {
-        name: "شكوى أمنية أو تعدي",
-        description: "مشاكل أمنية أو تعديات",
-        icon: "🚓",
-      },
-      {
-        name: "أخرى",
-        description: "شكاوى أخرى (مع تحديد التفاصيل)",
-        icon: "✉️",
-      },
-    ];
+    console.log("🔄 Running database migration...");
+    await migrateDatabase();
 
-    for (const type of defaultTypes) {
-      await prisma.complaintType.upsert({
-        where: { name: type.name },
-        update: {},
-        create: type,
-      });
-    }
-
-    // Create default admin users
+    // Create default admin users with enhanced security
     const bcrypt = require("bcryptjs");
     const hashedPassword = await bcrypt.hash("Emovmmm#951753", 12);
 
@@ -183,6 +129,7 @@ async function initializeData() {
     console.log("✅ تم تهيئة البيانات الافتراضية");
   } catch (error) {
     console.error("❌ خطأ في تهيئة البيانات:", error);
+    // Don't exit the process, just log the error
   }
 }
 
@@ -193,6 +140,12 @@ app.listen(PORT, async () => {
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
+  console.log("🛑 إيقاف الخادم...");
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+process.on("SIGTERM", async () => {
   console.log("🛑 إيقاف الخادم...");
   await prisma.$disconnect();
   process.exit(0);

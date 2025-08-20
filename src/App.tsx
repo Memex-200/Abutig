@@ -16,11 +16,27 @@ import EmployeeDashboard from "./components/EmployeeDashboard";
 import AdminDashboard from "./components/AdminDashboard";
 import LoginForm from "./components/LoginForm";
 import CitizenLoginForm from "./components/CitizenLoginForm";
+import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 
 const AppContent: React.FC = () => {
   const { user, logout, userType, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState("home");
+  // One-time: derive initial page from URL path to support direct links like /complaint-form
+  useEffect(() => {
+    const path = window.location.pathname;
+    const pathToPage: Record<string, string> = {
+      "/complaint-form": "complaint-form",
+      "/citizen-dashboard": "citizen-dashboard",
+      "/employee-dashboard": "employee-dashboard",
+      "/admin-dashboard": "admin-dashboard",
+      "/": "home",
+    };
+    const initial = pathToPage[path];
+    if (initial) {
+      setCurrentPage(initial);
+    }
+  }, []);
 
   const getDashboardPage = () => {
     if (userType === "complainant") return "citizen-dashboard";
@@ -29,20 +45,46 @@ const AppContent: React.FC = () => {
     return "home";
   };
 
-  // NEW FUNCTIONALITY: التوجيه التلقائي بعد تسجيل الدخول - تم إضافته في الإصدار 2.0.1
+  // التوجيه التلقائي بعد تسجيل الدخول مع احترام الصفحات اليدوية (مثل صفحة تقديم الشكوى)
   useEffect(() => {
-    if (!loading) {
-      if (user || userType === "complainant") {
-        const dashboardPage = getDashboardPage();
-        setCurrentPage(dashboardPage);
-      } else {
-        setCurrentPage("home");
-      }
+    if (loading) return;
+    if (user || userType === "complainant") {
+      const dashboardPage = getDashboardPage();
+      setCurrentPage((prev) => {
+        // لا تغيّر الصفحة إذا كان المستخدم اختار صفحة يدوية مثل نموذج الشكوى
+        const lockedPages = ["complaint-form"];
+        if (lockedPages.includes(prev)) return prev;
+        // غيّر فقط لو كنّا على صفحات الدخول/الرئيسية أو قيمة غير معروفة
+        const autoPages = [
+          "home",
+          "login",
+          "citizen-login",
+          "",
+          undefined as any,
+        ];
+        return autoPages.includes(prev as any) ? dashboardPage : prev;
+      });
+    } else {
+      setCurrentPage("home");
     }
   }, [user, userType, loading]);
 
   const handleNavigation = (page: string) => {
     setCurrentPage(page);
+    // Keep the URL in sync for direct reloads
+    const pageToPath: Record<string, string> = {
+      home: "/",
+      "complaint-form": "/complaint-form",
+      "citizen-dashboard": "/citizen-dashboard",
+      "employee-dashboard": "/employee-dashboard",
+      "admin-dashboard": "/admin-dashboard",
+      login: "/login",
+      "citizen-login": "/citizen-login",
+    };
+    const path = pageToPath[page];
+    if (path) {
+      window.history.pushState({}, "", path);
+    }
   };
 
   const handleLogout = () => {
@@ -57,11 +99,23 @@ const AppContent: React.FC = () => {
       case "complaint-form":
         return <ComplaintForm onNavigate={handleNavigation} />;
       case "citizen-dashboard":
-        return <CitizenDashboard />;
+        return (
+          <ProtectedRoute allowedRoles={["CITIZEN"]}>
+            <CitizenDashboard />
+          </ProtectedRoute>
+        );
       case "employee-dashboard":
-        return <EmployeeDashboard />;
+        return (
+          <ProtectedRoute allowedRoles={["EMPLOYEE", "ADMIN"]}>
+            <EmployeeDashboard />
+          </ProtectedRoute>
+        );
       case "admin-dashboard":
-        return <AdminDashboard />;
+        return (
+          <ProtectedRoute allowedRoles={["ADMIN"]}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        );
       case "login":
         return <LoginForm onNavigate={handleNavigation} />;
       case "citizen-login":

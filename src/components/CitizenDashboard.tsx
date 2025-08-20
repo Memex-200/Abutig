@@ -6,6 +6,8 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  AlertTriangle,
+  Wrench,
   Plus,
   Bell,
 } from "lucide-react";
@@ -75,18 +77,16 @@ const CitizenDashboard: React.FC = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "NEW":
+      case "UNRESOLVED":
         return "bg-blue-100 text-blue-800";
-      case "UNDER_REVIEW":
-        return "bg-yellow-100 text-yellow-800";
       case "IN_PROGRESS":
+        return "bg-yellow-100 text-yellow-800";
+      case "BEING_RESOLVED":
         return "bg-purple-100 text-purple-800";
+      case "OVERDUE":
+        return "bg-red-100 text-red-800";
       case "RESOLVED":
         return "bg-green-100 text-green-800";
-      case "REJECTED":
-        return "bg-red-100 text-red-800";
-      case "CLOSED":
-        return "bg-gray-100 text-gray-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -94,18 +94,16 @@ const CitizenDashboard: React.FC = () => {
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case "NEW":
-        return "جديد";
-      case "UNDER_REVIEW":
-        return "قيد المراجعة";
+      case "UNRESOLVED":
+        return "غير محلولة";
       case "IN_PROGRESS":
-        return "جار المعالجة";
+        return "قيد التنفيذ";
+      case "BEING_RESOLVED":
+        return "يتم حلها الآن";
+      case "OVERDUE":
+        return "متأخرة";
       case "RESOLVED":
         return "تم الحل";
-      case "REJECTED":
-        return "مرفوض";
-      case "CLOSED":
-        return "مغلق";
       default:
         return status;
     }
@@ -113,18 +111,16 @@ const CitizenDashboard: React.FC = () => {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "NEW":
+      case "UNRESOLVED":
         return <AlertCircle className="w-4 h-4" />;
-      case "UNDER_REVIEW":
-        return <Clock className="w-4 h-4" />;
       case "IN_PROGRESS":
         return <Clock className="w-4 h-4" />;
+      case "BEING_RESOLVED":
+        return <Wrench className="w-4 h-4" />;
+      case "OVERDUE":
+        return <AlertTriangle className="w-4 h-4" />;
       case "RESOLVED":
         return <CheckCircle className="w-4 h-4" />;
-      case "REJECTED":
-        return <XCircle className="w-4 h-4" />;
-      case "CLOSED":
-        return <XCircle className="w-4 h-4" />;
       default:
         return <AlertCircle className="w-4 h-4" />;
     }
@@ -172,7 +168,9 @@ const CitizenDashboard: React.FC = () => {
                 <div className="text-2xl font-bold text-orange-600">
                   {
                     complaints.filter((c) =>
-                      ["NEW", "UNDER_REVIEW", "IN_PROGRESS"].includes(c.status)
+                      ["UNRESOLVED", "IN_PROGRESS", "BEING_RESOLVED"].includes(
+                        c.status
+                      )
                     ).length
                   }
                 </div>

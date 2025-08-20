@@ -10,13 +10,27 @@ datasource db {
   url      = "file:./dev.db"
 }
 
+enum UserRole {
+  ADMIN
+  EMPLOYEE
+  CITIZEN
+}
+
+enum ComplaintStatus {
+  UNRESOLVED
+  IN_PROGRESS
+  BEING_RESOLVED
+  OVERDUE
+  RESOLVED
+}
+
 model User {
   id          String   @id @default(cuid())
   email       String?  @unique
   phone       String   @unique
   nationalId  String   @unique
   fullName    String
-  role        String   @default("CITIZEN") // Changed from enum to string
+  role        UserRole @default(CITIZEN)
   password    String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -24,6 +38,7 @@ model User {
 
   assignedComplaints Complaint[] @relation("AssignedTo")
   complaintLogs      ComplaintLog[]
+  statusChanges      ComplaintStatusChange[]
 
   @@map("users")
 }
@@ -46,13 +61,18 @@ model Complaint {
   typeId        String
   title         String
   description   String
-  status        String   @default("NEW") // Changed from enum to string
-  priority      String   @default("MEDIUM") // Changed from enum to string
+  status        ComplaintStatus @default(UNRESOLVED)
+  priority      String   @default("MEDIUM")
   location      String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   assignedToId  String?
   resolvedAt    DateTime?
+  
+  // Audit fields
+  createdByUserId        String?
+  lastStatusChangedBy    String?
+  lastStatusChangedAtUtc DateTime?
   
   complainant Complainant @relation(fields: [complainantId], references: [id])
   type        ComplaintType @relation(fields: [typeId], references: [id])
@@ -60,6 +80,7 @@ model Complaint {
   
   files ComplaintFile[]
   logs  ComplaintLog[]
+  statusChanges ComplaintStatusChange[]
 
   @@map("complaints")
 }
@@ -96,8 +117,8 @@ model ComplaintLog {
   complaintId String
   userId      String
   action      String
-  oldStatus   String? // Changed from enum to string
-  newStatus   String? // Changed from enum to string
+  oldStatus   ComplaintStatus?
+  newStatus   ComplaintStatus?
   notes       String?
   createdAt   DateTime @default(now())
   
@@ -105,4 +126,19 @@ model ComplaintLog {
   user      User      @relation(fields: [userId], references: [id])
 
   @@map("complaint_logs")
+}
+
+model ComplaintStatusChange {
+  id          String   @id @default(cuid())
+  complaintId String
+  userId      String
+  oldStatus   ComplaintStatus
+  newStatus   ComplaintStatus
+  changedAt   DateTime @default(now())
+  notes       String?
+  
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@map("complaint_status_changes")
 }

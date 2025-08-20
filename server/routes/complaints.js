@@ -4,7 +4,14 @@ const path = require("path");
 const fs = require("fs");
 const { body, validationResult, query } = require("express-validator");
 const { PrismaClient } = require("@prisma/client");
-const { authenticateToken, requireRole } = require("../middleware/auth");
+const {
+  authenticateToken,
+  requireRole,
+  requireAdmin,
+  requireOwnerOrAdmin,
+  complaintSubmissionRateLimiter,
+  adminActionRateLimiter,
+} = require("../middleware/auth");
 const {
   sendComplaintNotification,
   sendStatusUpdateNotification,
@@ -14,7 +21,7 @@ const XLSX = require("xlsx");
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Configure multer for file uploads
+// Configure multer for file uploads with enhanced security
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = path.join(__dirname, "../uploads");
@@ -24,8 +31,10 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
+    // Sanitize filename to prevent path traversal attacks
+    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    cb(null, uniqueSuffix + "-" + sanitizedName);
   },
 });
 
@@ -33,35 +42,58 @@ const upload = multer({
   storage,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB
+    files: 5, // Maximum 5 files
   },
   fileFilter: (req, file, cb) => {
+    // Enhanced file type validation
     const allowedTypes = [
       "image/jpeg",
       "image/png",
       "image/gif",
       "application/pdf",
     ];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("نوع الملف غير مدعوم"));
+
+    // Check MIME type
+    if (!allowedTypes.includes(file.mimetype)) {
+      return cb(new Error("نوع الملف غير مدعوم"));
     }
+
+    // Check file extension
+    const allowedExtensions = [".jpg", ".jpeg", ".png", ".gif", ".pdf"];
+    const fileExtension = path.extname(file.originalname).toLowerCase();
+    if (!allowedExtensions.includes(fileExtension)) {
+      return cb(new Error("امتداد الملف غير مدعوم"));
+    }
+
+    cb(null, true);
   },
 });
 
-// Submit new complaint
+// Submit new complaint with rate limiting
 router.post(
   "/submit",
+  complaintSubmissionRateLimiter,
   upload.array("files", 5),
   [
-    body("fullName").isLength({ min: 2 }).withMessage("الاسم مطلوب"),
+    body("fullName")
+      .isLength({ min: 2, max: 100 })
+      .withMessage("الاسم مطلوب (2-100 حرف)"),
     body("phone").isMobilePhone("ar-EG").withMessage("رقم هاتف غير صالح"),
     body("nationalId")
       .isLength({ min: 14, max: 14 })
       .withMessage("الرقم القومي يجب أن يكون 14 رقم"),
     body("typeId").notEmpty().withMessage("نوع الشكوى مطلوب"),
-    body("title").isLength({ min: 5 }).withMessage("عنوان الشكوى مطلوب"),
-    body("description").isLength({ min: 10 }).withMessage("وصف الشكوى مطلوب"),
+    body("title")
+      .isLength({ min: 5, max: 200 })
+      .withMessage("عنوان الشكوى مطلوب (5-200 حرف)"),
+    body("description")
+      .isLength({ min: 10, max: 2000 })
+      .withMessage("وصف الشكوى مطلوب (10-2000 حرف)"),
+    body("location")
+      .optional()
+      .isLength({ max: 500 })
+      .withMessage("الموقع يجب أن يكون أقل من 500 حرف"),
+    body("email").optional().isEmail().withMessage("بريد إلكتروني غير صالح"),
   ],
   async (req, res) => {
     try {
@@ -84,6 +116,15 @@ router.post(
         email,
       } = req.body;
 
+      // Validate complaint type exists
+      const complaintType = await prisma.complaintType.findUnique({
+        where: { id: typeId, isActive: true },
+      });
+
+      if (!complaintType) {
+        return res.status(400).json({ error: "نوع الشكوى غير صالح" });
+      }
+
       // Check if complainant exists, create if not
       let complainant = await prisma.complainant.findFirst({
         where: {
@@ -102,7 +143,7 @@ router.post(
         });
       }
 
-      // Create complaint
+      // Create complaint with audit fields
       const complaint = await prisma.complaint.create({
         data: {
           complainantId: complainant.id,
@@ -110,7 +151,8 @@ router.post(
           title,
           description,
           location: location || null,
-          status: "NEW",
+          status: "UNRESOLVED",
+          createdByUserId: req.user?.id || null,
         },
         include: {
           type: true,
@@ -118,7 +160,7 @@ router.post(
         },
       });
 
-      // Handle file uploads
+      // Handle file uploads with validation
       if (req.files && req.files.length > 0) {
         const filePromises = req.files.map((file) =>
           prisma.complaintFile.create({
@@ -135,14 +177,14 @@ router.post(
         await Promise.all(filePromises);
       }
 
-      // Log the creation - only if we have a user
+      // Log the creation - only if we have a valid user
       if (req.user?.id) {
         await prisma.complaintLog.create({
           data: {
             complaintId: complaint.id,
             userId: req.user.id,
             action: "CREATED",
-            newStatus: "NEW",
+            newStatus: "UNRESOLVED",
             notes: "تم إنشاء الشكوى",
           },
         });
@@ -173,7 +215,7 @@ router.post(
   }
 );
 
-// Get complaints (with role-based filtering)
+// Get complaints (with enhanced role-based filtering and security)
 router.get(
   "/",
   authenticateToken,
@@ -183,16 +225,15 @@ router.get(
     query("status")
       .optional()
       .isIn([
-        "NEW",
-        "UNDER_REVIEW",
+        "UNRESOLVED",
         "IN_PROGRESS",
+        "BEING_RESOLVED",
+        "OVERDUE",
         "RESOLVED",
-        "REJECTED",
-        "CLOSED",
       ]),
     query("typeId").optional().isString(),
-    query("search").optional().isString(),
-    query("complainant").optional().isString(),
+    query("search").optional().isString().isLength({ max: 100 }),
+    query("complainant").optional().isString().isLength({ max: 100 }),
   ],
   async (req, res) => {
     try {
@@ -213,23 +254,26 @@ router.get(
       if (req.query.status) filters.status = req.query.status;
       if (req.query.typeId) filters.typeId = req.query.typeId;
 
-      // Role-based filtering
+      // Enhanced role-based filtering with security
       if (req.user.role === "EMPLOYEE") {
         // Employee sees only assigned complaints
         filters.assignedToId = req.user.id;
-      } else if (req.user.role === "CITIZEN") {
+      } else if (req.user.role === "CITIZEN" || req.user.complainantId) {
         // Citizen sees only their own complaints
         filters.complainantId = req.user.complainantId;
       }
       // ADMIN can see all complaints (no additional filter)
 
-      // Search functionality
+      // Search functionality with sanitization
       if (req.query.search) {
-        filters.OR = [
-          { title: { contains: req.query.search } },
-          { description: { contains: req.query.search } },
-          { complainant: { fullName: { contains: req.query.search } } },
-        ];
+        const searchTerm = req.query.search.trim();
+        if (searchTerm.length > 0) {
+          filters.OR = [
+            { title: { contains: searchTerm } },
+            { description: { contains: searchTerm } },
+            { complainant: { fullName: { contains: searchTerm } } },
+          ];
+        }
       }
 
       const [complaints, total] = await Promise.all([
@@ -241,6 +285,11 @@ router.get(
               select: {
                 fullName: true,
                 phone: true,
+                // Only include sensitive data for admins
+                ...(req.user.role === "ADMIN" && {
+                  nationalId: true,
+                  email: true,
+                }),
               },
             },
             assignedTo: {
@@ -277,79 +326,207 @@ router.get(
   }
 );
 
-// Get single complaint (with role-based access)
-router.get("/:id", authenticateToken, async (req, res) => {
-  try {
-    const complaint = await prisma.complaint.findUnique({
-      where: { id: req.params.id },
-      include: {
-        type: true,
-        complainant: true,
-        assignedTo: {
-          select: {
-            fullName: true,
-            email: true,
-          },
-        },
-        files: true,
-        logs: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-              },
+// Get all complaints for admin dashboard (Admin only)
+router.get(
+  "/admin",
+  authenticateToken,
+  requireRole(["ADMIN"]),
+  [
+    query("status")
+      .optional()
+      .isIn([
+        "UNRESOLVED",
+        "IN_PROGRESS",
+        "BEING_RESOLVED",
+        "OVERDUE",
+        "RESOLVED",
+      ]),
+    query("type").optional().isString(),
+    query("dateFrom").optional().isISO8601(),
+    query("dateTo").optional().isISO8601(),
+    query("search").optional().isString().isLength({ max: 100 }),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: "معاملات غير صالحة",
+          details: errors.array(),
+        });
+      }
+
+      const filters = {};
+
+      // Apply filters
+      if (req.query.status) filters.status = req.query.status;
+      if (req.query.type) filters.typeId = req.query.type;
+      if (req.query.dateFrom || req.query.dateTo) {
+        filters.createdAt = {};
+        if (req.query.dateFrom)
+          filters.createdAt.gte = new Date(req.query.dateFrom);
+        if (req.query.dateTo)
+          filters.createdAt.lte = new Date(req.query.dateTo);
+      }
+
+      // Search functionality
+      if (req.query.search) {
+        const searchTerm = req.query.search.trim();
+        if (searchTerm.length > 0) {
+          filters.OR = [
+            { title: { contains: searchTerm } },
+            { description: { contains: searchTerm } },
+            { complainant: { fullName: { contains: searchTerm } } },
+            { complainant: { phone: { contains: searchTerm } } },
+          ];
+        }
+      }
+
+      const complaints = await prisma.complaint.findMany({
+        where: filters,
+        include: {
+          type: {
+            select: {
+              id: true,
+              name: true,
+              icon: true,
             },
           },
-          orderBy: { createdAt: "desc" },
+          complainant: {
+            select: {
+              id: true,
+              fullName: true,
+              phone: true,
+              email: true,
+            },
+          },
+          assignedTo: {
+            select: {
+              id: true,
+              fullName: true,
+            },
+          },
+          files: {
+            select: {
+              id: true,
+              filename: true,
+              originalName: true,
+            },
+          },
         },
-      },
-    });
+        orderBy: { createdAt: "desc" },
+      });
 
-    if (!complaint) {
-      return res.status(404).json({ error: "الشكوى غير موجودة" });
+      // Transform files to match expected format
+      const transformedComplaints = complaints.map((complaint) => ({
+        ...complaint,
+        attachments: complaint.files.map((file) => ({
+          id: file.id,
+          filename: file.originalName || file.filename,
+          url: `/uploads/${file.filename}`,
+        })),
+        files: undefined, // Remove the original files array
+      }));
+
+      res.json({
+        complaints: transformedComplaints,
+      });
+    } catch (error) {
+      console.error("Get admin complaints error:", error);
+      res.status(500).json({ error: "خطأ في جلب الشكاوى" });
     }
-
-    // Role-based access control
-    if (
-      req.user.role === "EMPLOYEE" &&
-      complaint.assignedToId !== req.user.id
-    ) {
-      return res
-        .status(403)
-        .json({ error: "غير مسموح لك بالوصول لهذه الشكوى" });
-    }
-
-    if (
-      req.user.role === "CITIZEN" &&
-      complaint.complainantId !== req.user.complainantId
-    ) {
-      return res
-        .status(403)
-        .json({ error: "غير مسموح لك بالوصول لهذه الشكوى" });
-    }
-
-    res.json(complaint);
-  } catch (error) {
-    console.error("Get complaint error:", error);
-    res.status(500).json({ error: "خطأ في جلب الشكوى" });
   }
-});
+);
 
-// Update complaint status (Employee/Admin only)
+// Get single complaint (with enhanced ownership checks)
+router.get(
+  "/:id",
+  authenticateToken,
+  requireOwnerOrAdmin("complaint"),
+  async (req, res) => {
+    try {
+      const complaint = await prisma.complaint.findUnique({
+        where: { id: req.params.id },
+        include: {
+          type: true,
+          complainant: {
+            select: {
+              fullName: true,
+              phone: true,
+              // Include sensitive data only for admins
+              ...(req.user.role === "ADMIN" && {
+                nationalId: true,
+                email: true,
+              }),
+            },
+          },
+          assignedTo: {
+            select: {
+              fullName: true,
+              email: true,
+            },
+          },
+          files: {
+            select: {
+              id: true,
+              originalName: true,
+              mimeType: true,
+              size: true,
+              uploadedAt: true,
+            },
+          },
+          logs: {
+            include: {
+              user: {
+                select: {
+                  fullName: true,
+                  role: true,
+                },
+              },
+            },
+            orderBy: { createdAt: "desc" },
+          },
+          statusChanges: {
+            include: {
+              user: {
+                select: {
+                  fullName: true,
+                  role: true,
+                },
+              },
+            },
+            orderBy: { changedAt: "desc" },
+          },
+        },
+      });
+
+      if (!complaint) {
+        return res.status(404).json({ error: "الشكوى غير موجودة" });
+      }
+
+      res.json(complaint);
+    } catch (error) {
+      console.error("Get complaint error:", error);
+      res.status(500).json({ error: "خطأ في جلب الشكوى" });
+    }
+  }
+);
+
+// Update complaint status (Employee/Admin only) with enhanced workflow
 router.patch(
   "/:id/status",
   authenticateToken,
   requireRole(["EMPLOYEE", "ADMIN"]),
+  adminActionRateLimiter,
   [
     body("status").isIn([
-      "NEW",
-      "UNDER_REVIEW",
+      "UNRESOLVED",
       "IN_PROGRESS",
+      "BEING_RESOLVED",
+      "OVERDUE",
       "RESOLVED",
-      "REJECTED",
-      "CLOSED",
     ]),
-    body("notes").optional().isString(),
+    body("notes").optional().isString().isLength({ max: 1000 }),
   ],
   async (req, res) => {
     try {
@@ -376,7 +553,7 @@ router.patch(
         return res.status(404).json({ error: "الشكوى غير موجودة" });
       }
 
-      // Role-based access control
+      // Enhanced role-based access control
       if (
         req.user.role === "EMPLOYEE" &&
         complaint.assignedToId !== req.user.id
@@ -388,26 +565,45 @@ router.patch(
 
       const oldStatus = complaint.status;
 
-      const updatedComplaint = await prisma.complaint.update({
-        where: { id: complaintId },
-        data: {
-          status,
-          ...(status === "RESOLVED" && { resolvedAt: new Date() }),
-          ...(req.user.role === "EMPLOYEE" &&
-            !complaint.assignedToId && { assignedToId: req.user.id }),
-        },
-      });
+      // Use transaction to ensure data consistency
+      const result = await prisma.$transaction(async (tx) => {
+        // Update complaint status
+        const updatedComplaint = await tx.complaint.update({
+          where: { id: complaintId },
+          data: {
+            status,
+            lastStatusChangedBy: req.user.id,
+            lastStatusChangedAtUtc: new Date(),
+            ...(status === "RESOLVED" && { resolvedAt: new Date() }),
+            ...(req.user.role === "EMPLOYEE" &&
+              !complaint.assignedToId && { assignedToId: req.user.id }),
+          },
+        });
 
-      // Log the status change
-      await prisma.complaintLog.create({
-        data: {
-          complaintId,
-          userId: req.user.id,
-          action: "STATUS_CHANGED",
-          oldStatus,
-          newStatus: status,
-          notes: notes || `تم تغيير الحالة من ${oldStatus} إلى ${status}`,
-        },
+        // Log the status change
+        await tx.complaintLog.create({
+          data: {
+            complaintId,
+            userId: req.user.id,
+            action: "STATUS_CHANGED",
+            oldStatus,
+            newStatus: status,
+            notes: notes || `تم تغيير الحالة من ${oldStatus} إلى ${status}`,
+          },
+        });
+
+        // Create status change audit record
+        await tx.complaintStatusChange.create({
+          data: {
+            complaintId,
+            userId: req.user.id,
+            oldStatus,
+            newStatus: status,
+            notes: notes || `تم تغيير الحالة من ${oldStatus} إلى ${status}`,
+          },
+        });
+
+        return updatedComplaint;
       });
 
       // Send email notification to complainant if they have email
@@ -428,7 +624,7 @@ router.patch(
 
       res.json({
         success: true,
-        complaint: updatedComplaint,
+        complaint: result,
         message: "تم تحديث حالة الشكوى بنجاح",
       });
     } catch (error) {
@@ -442,7 +638,8 @@ router.patch(
 router.patch(
   "/:id/assign",
   authenticateToken,
-  requireRole(["ADMIN"]),
+  requireAdmin,
+  adminActionRateLimiter,
   [body("assignedToId").notEmpty().withMessage("الموظف المخصص مطلوب")],
   async (req, res) => {
     try {
@@ -492,22 +689,13 @@ router.patch(
   }
 );
 
-// NEW FUNCTIONALITY: تصدير الشكاوى بصيغة Excel - تم إضافته في الإصدار 2.0.0
+// Export complaints (Admin/Employee only) with enhanced security
 router.get(
   "/export/excel",
   authenticateToken,
   requireRole(["ADMIN", "EMPLOYEE"]),
   [
-    query("status")
-      .optional()
-      .isIn([
-        "NEW",
-        "UNDER_REVIEW",
-        "IN_PROGRESS",
-        "RESOLVED",
-        "REJECTED",
-        "CLOSED",
-      ]),
+    query("status").optional().isIn(["UNRESOLVED", "IN_PROGRESS", "RESOLVED"]),
     query("typeId").optional().isString(),
     query("dateFrom").optional().isISO8601(),
     query("dateTo").optional().isISO8601(),
@@ -573,12 +761,11 @@ router.get(
 
       // Status translation
       const statusNames = {
-        NEW: "جديدة",
-        UNDER_REVIEW: "قيد المراجعة",
+        UNRESOLVED: "غير محلولة",
         IN_PROGRESS: "قيد التنفيذ",
+        BEING_RESOLVED: "يتم حلها الآن",
+        OVERDUE: "متأخرة",
         RESOLVED: "تم الحل",
-        REJECTED: "مرفوضة",
-        CLOSED: "مغلقة",
       };
 
       const data = complaints.map((complaint) => ({
@@ -628,7 +815,7 @@ router.get(
   }
 );
 
-// NEW FUNCTIONALITY: تصدير الشكاوى بصيغة CSV - تم إضافته في الإصدار 2.0.0
+// Export CSV with enhanced security
 router.get(
   "/export/csv",
   authenticateToken,
@@ -637,12 +824,11 @@ router.get(
     query("status")
       .optional()
       .isIn([
-        "NEW",
-        "UNDER_REVIEW",
+        "UNRESOLVED",
         "IN_PROGRESS",
+        "BEING_RESOLVED",
+        "OVERDUE",
         "RESOLVED",
-        "REJECTED",
-        "CLOSED",
       ]),
     query("typeId").optional().isString(),
     query("dateFrom").optional().isISO8601(),
@@ -707,12 +893,11 @@ router.get(
 
       // Status translation
       const statusNames = {
-        NEW: "جديدة",
-        UNDER_REVIEW: "قيد المراجعة",
+        UNRESOLVED: "غير محلولة",
         IN_PROGRESS: "قيد التنفيذ",
+        BEING_RESOLVED: "يتم حلها الآن",
+        OVERDUE: "متأخرة",
         RESOLVED: "تم الحل",
-        REJECTED: "مرفوضة",
-        CLOSED: "مغلقة",
       };
 
       // Create CSV content
@@ -783,12 +968,17 @@ router.get(
   }
 );
 
-// Add internal note to complaint (Employee/Admin only) - NEW FUNCTIONALITY
+// Add internal note to complaint (Employee/Admin only) with enhanced security
 router.post(
   "/:id/internal-note",
   authenticateToken,
   requireRole(["EMPLOYEE", "ADMIN"]),
-  [body("note").isLength({ min: 1 }).withMessage("الملاحظة مطلوبة")],
+  adminActionRateLimiter,
+  [
+    body("note")
+      .isLength({ min: 1, max: 1000 })
+      .withMessage("الملاحظة مطلوبة (1-1000 حرف)"),
+  ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
@@ -812,7 +1002,7 @@ router.post(
         return res.status(404).json({ error: "الشكوى غير موجودة" });
       }
 
-      // Role-based access control
+      // Enhanced role-based access control
       if (
         req.user.role === "EMPLOYEE" &&
         complaint.assignedToId !== req.user.id
@@ -843,7 +1033,7 @@ router.post(
   }
 );
 
-// Get complaint internal notes (Employee/Admin only) - NEW FUNCTIONALITY
+// Get complaint internal notes (Employee/Admin only) with enhanced security
 router.get(
   "/:id/internal-notes",
   authenticateToken,
@@ -862,7 +1052,7 @@ router.get(
         return res.status(404).json({ error: "الشكوى غير موجودة" });
       }
 
-      // Role-based access control
+      // Enhanced role-based access control
       if (
         req.user.role === "EMPLOYEE" &&
         complaint.assignedToId !== req.user.id
