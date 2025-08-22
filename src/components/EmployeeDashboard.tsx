@@ -16,6 +16,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { supabase } from "../utils/supabaseClient.ts";
 
 interface Complaint {
   id: string;
@@ -75,21 +76,44 @@ const EmployeeDashboard: React.FC = () => {
 
   const fetchComplaints = async () => {
     try {
-      const token = localStorage.getItem("authToken");
-      if (!token) return;
+      if (!user) return;
 
-      const response = await fetch(
-        `http://localhost:3001/api/complaints/employee?tab=${activeTab}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
+      let query = supabase
+        .from("complaints")
+        .select(
+          "id,title,description,status,priority,location,created_at, resolved_at, complainant:complainants(full_name,phone), type:complaint_types(name,icon)"
+        )
+        .order("created_at", { ascending: false });
+
+      // Employees see assigned complaints; for "new" tab, show UNASSIGNED/UNRESOLVED
+      if (activeTab === "new") {
+        query = query.eq("status", "UNRESOLVED");
+      } else {
+        query = query.in("status", [
+          "UNRESOLVED",
+          "IN_PROGRESS",
+          "BEING_RESOLVED",
+        ]);
+      }
+
+      const { data, error } = await query;
+      if (!error && data) {
+        const mapped = (data as any[]).map((c) => ({
+          id: c.id,
+          title: c.title,
+          description: c.description,
+          status: c.status,
+          type: c.type,
+          createdAt: c.created_at,
+          resolvedAt: c.resolved_at,
+          complainant: {
+            fullName: c.complainant?.full_name,
+            phone: c.complainant?.phone,
           },
-        }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setComplaints(result.complaints);
+          priority: c.priority,
+          location: c.location,
+        }));
+        setComplaints(mapped as any);
       }
     } catch (error) {
       console.error("Error fetching complaints:", error);
@@ -190,26 +214,11 @@ const EmployeeDashboard: React.FC = () => {
     if (!selectedComplaint || !updateForm.status) return;
 
     try {
-      const token = localStorage.getItem("authToken");
-      if (!token) return;
-
-      const response = await fetch(
-        `http://localhost:3001/api/complaints/${selectedComplaint.id}/update`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            status: updateForm.status,
-            message: updateForm.message,
-            internalNote: updateForm.internalNote,
-          }),
-        }
-      );
-
-      if (response.ok) {
+      const { error } = await supabase
+        .from("complaints")
+        .update({ status: updateForm.status })
+        .eq("id", selectedComplaint.id);
+      if (!error) {
         setShowUpdateModal(false);
         setUpdateForm({ status: "", message: "", internalNote: "" });
         fetchComplaints();
@@ -221,26 +230,12 @@ const EmployeeDashboard: React.FC = () => {
 
   const assignToSelf = async (complaintId: string) => {
     try {
-      const token = localStorage.getItem("authToken");
-      if (!token) return;
-
-      const response = await fetch(
-        `http://localhost:3001/api/complaints/${complaintId}/assign`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            assignedTo: user?.id,
-          }),
-        }
-      );
-
-      if (response.ok) {
-        fetchComplaints();
-      }
+      if (!user) return;
+      const { error } = await supabase
+        .from("complaints")
+        .update({ assigned_to_id: user.id })
+        .eq("id", complaintId);
+      if (!error) fetchComplaints();
     } catch (error) {
       console.error("Error assigning complaint:", error);
     }
@@ -318,7 +313,9 @@ const EmployeeDashboard: React.FC = () => {
                 قيد المعالجة (
                 {
                   complaints.filter((c) =>
-                    ["UNRESOLVED", "IN_PROGRESS", "BEING_RESOLVED"].includes(c.status)
+                    ["UNRESOLVED", "IN_PROGRESS", "BEING_RESOLVED"].includes(
+                      c.status
+                    )
                   ).length
                 }
                 )

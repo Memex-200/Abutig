@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { LogIn, User, Phone, CreditCard, AlertCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { supabase } from "../utils/supabaseClient.ts";
 
 interface LoginFormProps {
   onNavigate: (page: string) => void;
@@ -31,29 +32,62 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
     setError("");
 
     try {
-      const response = await fetch("http://localhost:3001/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(staffForm),
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: staffForm.email,
+        password: staffForm.password,
       });
 
-      const result = await response.json();
-
-      if (response.ok) {
-        login(result.user, result.token);
-        if (result.user.role === "ADMIN") {
-          onNavigate("admin-dashboard");
+      if (error) {
+        console.error("Supabase auth error:", error);
+        // Handle specific error cases
+        if (error.status === 400) {
+          setError("الحساب غير موجود أو كلمة المرور غير صحيحة");
+        } else if (error.message.includes("Invalid login credentials")) {
+          setError("الحساب غير موجود أو كلمة المرور غير صحيحة");
         } else {
-          onNavigate("employee-dashboard");
+          setError(error.message || "خطأ في تسجيل الدخول");
         }
-      } else {
-        setError(result.error || "خطأ في تسجيل الدخول");
+      } else if (data.session) {
+        const authUserId = data.session.user.id;
+        const { data: profiles, error: profileError } = await supabase
+          .from('users')
+          .select('id,email,full_name,role,is_active')
+          .eq('auth_user_id', authUserId)
+          .limit(1);
+        
+        if (profileError) {
+          console.error("Profile fetch error:", profileError);
+          setError("خطأ في جلب بيانات المستخدم");
+        } else if (!profiles || profiles.length === 0) {
+          setError("لا يوجد ملف مستخدم مرتبط بهذا الحساب");
+        } else {
+          const profile = profiles[0] as any;
+          
+          // Check if user is active
+          if (!profile.is_active) {
+            setError("الحساب معطل، يرجى التواصل مع الإدارة");
+            return;
+          }
+          
+          const mappedUser = {
+            id: profile.id,
+            email: profile.email,
+            fullName: profile.full_name,
+            role: profile.role,
+          } as any;
+          
+          login(mappedUser, "");
+          
+          if (mappedUser.role === "ADMIN") {
+            onNavigate("admin-dashboard");
+          } else {
+            onNavigate("employee-dashboard");
+          }
+        }
       }
     } catch (error) {
-      setError("خطأ في الاتصال بالخادم");
       console.error("Login error:", error);
+      setError("خطأ في الاتصال بالخادم");
     } finally {
       setLoading(false);
     }
@@ -65,21 +99,14 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
     setError("");
 
     try {
-      const response = await fetch(
-        "http://localhost:3001/api/auth/verify-citizen",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(citizenForm),
-        }
-      );
-
+      const response = await fetch('/.netlify/functions/verifyCitizen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(citizenForm),
+      });
       const result = await response.json();
-
       if (response.ok) {
-        loginComplainant(result.complainant, result.token);
+        loginComplainant(result.complainant, "");
         onNavigate("citizen-dashboard");
       } else {
         setError(result.error || "خطأ في التحقق");

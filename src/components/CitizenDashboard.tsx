@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import NotificationCenter from "./NotificationCenter";
+import { supabase } from "../utils/supabaseClient.ts";
 
 interface Complaint {
   id: string;
@@ -44,29 +45,29 @@ const CitizenDashboard: React.FC = () => {
 
   const fetchComplaints = async () => {
     try {
-      const token = localStorage.getItem("authToken");
-
-      if (!token) {
-        console.log("No auth token found");
+      if (!complainant) {
         setComplaints([]);
-        setLoading(false);
         return;
       }
 
-      // For citizens, we don't need to send complainant ID - the backend will filter based on the token
-      const response = await fetch("http://localhost:3001/api/complaints", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        setComplaints(result.complaints);
-      } else if (response.status === 401) {
-        // Token is invalid, clear storage and redirect
-        localStorage.clear();
-        window.location.reload();
+      const { data, error } = await supabase
+        .from("complaints")
+        .select(
+          "id,title,description,status,created_at,resolved_at, location, type:complaint_types(name,icon)"
+        )
+        .eq("complainant_id", complainant.id)
+        .order("created_at", { ascending: false });
+      if (!error && data) {
+        const mapped = (data as any[]).map((c) => ({
+          id: c.id,
+          title: c.title,
+          description: c.description,
+          status: c.status,
+          type: c.type,
+          createdAt: c.created_at,
+          resolvedAt: c.resolved_at,
+        }));
+        setComplaints(mapped as any);
       }
     } catch (error) {
       console.error("Error fetching complaints:", error);

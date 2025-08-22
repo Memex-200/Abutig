@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { FileText, Upload, X, AlertCircle, CheckCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { supabase } from "../utils/supabaseClient.ts";
 
 interface ComplaintFormProps {
   onNavigate: (page: string) => void;
@@ -25,6 +26,7 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
     description: "",
     location: "",
   });
+  const [nationalIdError, setNationalIdError] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [complaintTypes, setComplaintTypes] = useState<ComplaintType[]>([]);
 
@@ -101,27 +103,23 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
 
   const fetchComplaintTypes = async () => {
     try {
-      console.log("Fetching complaint types...");
-      const response = await fetch("http://localhost:3001/api/types");
-      console.log("Response status:", response.status);
-      if (response.ok) {
-        const types = await response.json();
-        console.log("Fetched types:", types);
-        setComplaintTypes(types);
+      const { data, error } = await supabase
+        .from("complaint_types")
+        .select("id,name,description,icon")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+      if (!error && data) {
+        const mapped = (data as any[]).map((t) => ({
+          id: t.id,
+          name: t.name,
+          description: t.description,
+          icon: t.icon,
+        }));
+        setComplaintTypes(mapped);
       } else {
-        console.error(
-          "Failed to fetch types:",
-          response.status,
-          response.statusText
-        );
-        // Use fallback types if API fails
-        console.log("Using fallback types");
         setComplaintTypes(fallbackTypes);
       }
     } catch (error) {
-      console.error("Error fetching complaint types:", error);
-      // Use fallback types if network error
-      console.log("Using fallback types due to network error");
       setComplaintTypes(fallbackTypes);
     }
   };
@@ -136,6 +134,17 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
       ...prev,
       [name]: value,
     }));
+    if (name === "nationalId") {
+      const digitsOnly = value.replace(/[^0-9]/g, "");
+      if (digitsOnly !== value) {
+        setFormData((prev) => ({ ...prev, nationalId: digitsOnly }));
+      }
+      if (digitsOnly.length !== 14) {
+        setNationalIdError("الرقم القومي يجب أن يكون 14 رقمًا");
+      } else {
+        setNationalIdError("");
+      }
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -158,83 +167,75 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
     setError("");
 
     try {
-      const formDataToSend = new FormData();
+      if (!/^\d{14}$/.test(formData.nationalId)) {
+        setError("الرقم القومي غير صالح. يجب أن يكون 14 رقمًا.");
+        setLoading(false);
+        return;
+      }
 
-      // Add form fields
-      Object.entries(formData).forEach(([key, value]) => {
-        formDataToSend.append(key, value);
+      // Submit via Netlify function (handles citizen ensure + complaint insert)
+      const submitRes = await fetch("/.netlify/functions/submitComplaint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: formData.fullName,
+          phone: formData.phone,
+          nationalId: formData.nationalId,
+          email: formData.email,
+          typeId: formData.typeId,
+          title: formData.title,
+          description: formData.description,
+          location: formData.location || null,
+        }),
       });
+      const submit = await submitRes.json();
+      if (!submitRes.ok) throw new Error(submit.error || "فشل إرسال الشكوى");
 
-      // Add files
-      files.forEach((file) => {
-        formDataToSend.append("files", file);
-      });
+      const complaintId = submit.complaintId as string;
 
-      const response = await fetch(
-        "http://localhost:3001/api/complaints/submit",
-        {
-          method: "POST",
-          body: formDataToSend,
-        }
-      );
-
-      const result = await response.json();
-      console.log("Submit response:", result);
-
-      if (response.ok) {
-        // Auto-login the citizen after successful complaint submission
-        try {
-          const verifyResponse = await fetch(
-            "http://localhost:3001/api/auth/verify-citizen",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                phone: formData.phone,
-                nationalId: formData.nationalId,
-                fullName: formData.fullName,
-              }),
-            }
-          );
-
-          if (verifyResponse.ok) {
-            const verifyResult = await verifyResponse.json();
-            loginComplainant(verifyResult.complainant, verifyResult.token);
+      // Upload files to Supabase Storage (optional)
+      if (files.length > 0) {
+        for (const file of files) {
+          const path = `${complaintId}/${Date.now()}-${file.name}`;
+          const upload = await supabase.storage
+            .from("complaint-files")
+            .upload(path, file, {
+              upsert: false,
+            });
+          if (!upload.error) {
+            await supabase.from("complaint_files").insert({
+              complaint_id: complaintId,
+              file_path: path,
+              file_type: file.type,
+              file_size: file.size,
+            });
           }
-        } catch (loginError) {
-          console.error("Auto-login error:", loginError);
-          // Continue even if auto-login fails
-        }
-
-        setSuccess(true);
-        // Reset form after 3 seconds
-        setTimeout(() => {
-          setSuccess(false);
-          setFormData({
-            fullName: "",
-            phone: "",
-            nationalId: "",
-            email: "",
-            typeId: "",
-            title: "",
-            description: "",
-            location: "",
-          });
-          setFiles([]);
-        }, 3000);
-      } else {
-        console.error("Submit error:", result);
-        if (result.details && Array.isArray(result.details)) {
-          const errorMessages = result.details
-            .map((detail: any) => detail.message)
-            .join(", ");
-          setError(`بيانات غير صحيحة: ${errorMessages}`);
-        } else {
-          setError(result.error || "حدث خطأ أثناء تقديم الشكوى");
         }
       }
+
+      // Auto-login citizen context (create complainant object from submitted data)
+      const complainantData = {
+        id: submit.complaintId, // Use complaint ID as temporary ID
+        fullName: formData.fullName,
+        phone: formData.phone,
+      };
+      loginComplainant(complainantData, "");
+
+      setSuccess(true);
+      setTimeout(() => {
+        setSuccess(false);
+        setFormData({
+          fullName: "",
+          phone: "",
+          nationalId: "",
+          email: "",
+          typeId: "",
+          title: "",
+          description: "",
+          location: "",
+        });
+        setFiles([]);
+      }, 3000);
     } catch (error) {
       setError("خطأ في الاتصال بالخادم");
       console.error("Submit error:", error);
@@ -291,7 +292,9 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
             <div className="flex items-center">
               <FileText className="w-6 h-6 sm:w-8 sm:h-8 ml-2 sm:ml-3" />
               <div>
-                <h1 className="text-xl sm:text-2xl font-bold">تقديم شكوى جديدة</h1>
+                <h1 className="text-xl sm:text-2xl font-bold">
+                  تقديم شكوى جديدة
+                </h1>
                 <p className="text-blue-100 mt-1 text-sm sm:text-base">
                   املأ النموذج التالي لتقديم شكوى للمجلس البلدي
                 </p>
@@ -300,11 +303,16 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+          <form
+            onSubmit={handleSubmit}
+            className="p-4 sm:p-6 space-y-4 sm:space-y-6"
+          >
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4 flex items-start">
                 <AlertCircle className="w-5 h-5 text-red-500 ml-2 mt-0.5 flex-shrink-0" />
-                <span className="text-red-700 text-sm sm:text-base">{error}</span>
+                <span className="text-red-700 text-sm sm:text-base">
+                  {error}
+                </span>
               </div>
             )}
 
@@ -354,6 +362,9 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                   placeholder="14 رقم"
                 />
+                {nationalIdError && (
+                  <p className="mt-1 text-xs text-red-600">{nationalIdError}</p>
+                )}
               </div>
 
               <div>
@@ -475,7 +486,9 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                       key={index}
                       className="flex items-center justify-between bg-gray-50 p-2 sm:p-3 rounded-lg"
                     >
-                      <span className="text-sm text-gray-700 truncate flex-1">{file.name}</span>
+                      <span className="text-sm text-gray-700 truncate flex-1">
+                        {file.name}
+                      </span>
                       <button
                         type="button"
                         onClick={() => removeFile(index)}

@@ -31,6 +31,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { supabase, supabaseAdmin } from "../utils/supabaseClient.ts";
 
 interface Complaint {
   id: string;
@@ -88,8 +89,6 @@ interface ComplaintType {
   isActive: boolean;
 }
 
-
-
 const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<
@@ -139,18 +138,15 @@ const AdminDashboard: React.FC = () => {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem("authToken");
-      if (!token) return;
-
       switch (activeTab) {
         case "users":
-          await fetchUsers(token);
+          await fetchUsers();
           break;
         case "complaints":
-          await fetchComplaints(token);
+          await fetchComplaints();
           break;
         case "types":
-          await fetchComplaintTypes(token);
+          await fetchComplaintTypes();
           break;
       }
     } catch (error) {
@@ -160,45 +156,78 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-
-
-  const fetchComplaints = async (token: string) => {
+    const fetchComplaints = async () => {
     try {
-      const queryParams = new URLSearchParams();
-      if (complaintFilters.status)
-        queryParams.append("status", complaintFilters.status);
-      if (complaintFilters.type)
-        queryParams.append("type", complaintFilters.type);
-      if (complaintFilters.dateFrom)
-        queryParams.append("dateFrom", complaintFilters.dateFrom);
-      if (complaintFilters.dateTo)
-        queryParams.append("dateTo", complaintFilters.dateTo);
-      if (searchTerm) queryParams.append("search", searchTerm);
+      let query = supabase
+        .from("complaints")
+        .select(`
+          id, title, description, status, created_at, resolved_at, priority, location,
+          type:complaint_types(id, name, icon),
+          citizen:users!complaints_citizen_id_fkey(id, full_name, phone, email)
+        `)
+        .order("created_at", { ascending: false });
 
-      const response = await fetch(
-        `http://localhost:3001/api/complaints/admin?${queryParams}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setComplaints(data.complaints || []);
+      // Apply filters
+      if (complaintFilters.status) query = query.eq("status", complaintFilters.status);
+      if (complaintFilters.type) query = query.eq("type_id", complaintFilters.type);
+      if (complaintFilters.dateFrom) query = query.gte("created_at", complaintFilters.dateFrom);
+      if (complaintFilters.dateTo) query = query.lte("created_at", complaintFilters.dateTo);
+      if (searchTerm) query = query.ilike("title", `%${searchTerm}%`);
+
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error("Error fetching complaints:", error);
+        return;
       }
+
+      // Transform data
+      const transformedData = data?.map((complaint: any) => ({
+        id: complaint.id,
+        title: complaint.title,
+        description: complaint.description,
+        status: complaint.status,
+        createdAt: complaint.created_at,
+        resolvedAt: complaint.resolved_at,
+        priority: complaint.priority,
+        location: complaint.location,
+        type: complaint.type,
+        complainant: complaint.citizen ? {
+          id: complaint.citizen.id,
+          fullName: complaint.citizen.full_name,
+          phone: complaint.citizen.phone,
+          email: complaint.citizen.email,
+        } : null,
+      })) || [];
+
+      setComplaints(transformedData);
     } catch (error) {
       console.error("Error fetching complaints:", error);
     }
   };
 
-  const fetchUsers = async (token: string) => {
+    const fetchUsers = async () => {
     try {
-      const response = await fetch("http://localhost:3001/api/users", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setUsers(Array.isArray(data) ? data : data.users || []);
+      const { data, error } = await supabase
+        .from("users")
+        .select("id, full_name, email, role, is_active, created_at")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Error fetching users:", error);
+        return;
       }
+
+      const transformedData = data?.map((user: any) => ({
+        id: user.id,
+        fullName: user.full_name,
+        email: user.email,
+        role: user.role,
+        isActive: user.is_active,
+        createdAt: user.created_at,
+      })) || [];
+
+      setUsers(transformedData);
     } catch (error) {
       console.error("Error fetching users:", error);
     }
@@ -206,36 +235,112 @@ const AdminDashboard: React.FC = () => {
 
   const handleCreateUser = async () => {
     try {
-      const token = localStorage.getItem("authToken");
-      if (!token) return;
-
-      const response = await fetch("http://localhost:3001/api/users", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+      // Create auth user
+      const { data: authRes, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: userForm.email,
+        email_confirm: true,
+        password: userForm.password,
+        user_metadata: {
+          full_name: userForm.fullName,
+          role: userForm.role,
         },
-        body: JSON.stringify(userForm),
       });
 
-      if (response.ok) {
-        setShowUserModal(false);
-        setUserForm({
-          fullName: "",
-          email: "",
-          phone: "",
-          nationalId: "",
-          role: "EMPLOYEE",
-          password: "",
-        });
-        await fetchUsers(token);
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        alert(errorData.error || "فشل إنشاء المستخدم");
+      if (authError || !authRes.user) {
+        console.error("Auth creation error:", authError);
+        alert("فشل إنشاء حساب المستخدم");
+        return;
       }
+
+      // Create profile row
+      const { error: profileError } = await supabaseAdmin
+        .from("users")
+        .insert({
+          email: userForm.email,
+          full_name: userForm.fullName,
+          phone: userForm.phone || null,
+          national_id: userForm.nationalId || null,
+          role: userForm.role,
+          is_active: true,
+          auth_user_id: authRes.user.id,
+        });
+
+      if (profileError) {
+        console.error("Profile creation error:", profileError);
+        // Clean up auth user if profile creation fails
+        await supabaseAdmin.auth.admin.deleteUser(authRes.user.id);
+        alert("فشل إنشاء ملف المستخدم");
+        return;
+      }
+
+      setShowUserModal(false);
+      setUserForm({
+        fullName: "",
+        email: "",
+        phone: "",
+        nationalId: "",
+        role: "EMPLOYEE",
+        password: "",
+      });
+      await fetchUsers();
+      alert("تم إنشاء المستخدم بنجاح");
     } catch (error) {
       console.error("Error creating user:", error);
       alert("حدث خطأ أثناء إنشاء المستخدم");
+    }
+  };
+
+  const handleMigrateUsers = async () => {
+    try {
+      const response = await fetch("/.netlify/functions/migrateUsers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        if (result.migrated && result.migrated.length > 0) {
+          alert(
+            `تم ترحيل ${
+              result.migrated.length
+            } مستخدم بنجاح. كلمات المرور الافتراضية:\n${result.migrated
+              .map((u: any) => `${u.email}: ${u.default_password}`)
+              .join("\n")}`
+          );
+        } else {
+          alert(result.message || "لا يوجد مستخدمين يحتاجون للترحيل");
+        }
+        await fetchUsers();
+      } else {
+        alert(result.error || "فشل ترحيل المستخدمين");
+      }
+    } catch (error) {
+      console.error("Error migrating users:", error);
+      alert("حدث خطأ أثناء ترحيل المستخدمين");
+    }
+  };
+
+  const handleCreateTestUser = async () => {
+    try {
+      const response = await fetch("/.netlify/functions/createTestUser", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        alert(
+          `تم إنشاء المستخدم التجريبي بنجاح!\n\nبيانات تسجيل الدخول:\nالبريد الإلكتروني: ${result.login_credentials.email}\nكلمة المرور: ${result.login_credentials.password}`
+        );
+        await fetchUsers();
+      } else {
+        alert(result.error || "فشل إنشاء المستخدم التجريبي");
+      }
+    } catch (error) {
+      console.error("Error creating test user:", error);
+      alert("حدث خطأ أثناء إنشاء المستخدم التجريبي");
     }
   };
 
@@ -243,58 +348,60 @@ const AdminDashboard: React.FC = () => {
     if (!selectedComplaint || !statusUpdateForm.status) return;
 
     try {
-      const token = localStorage.getItem("authToken");
-      if (!token) return;
-
-      const response = await fetch(
-        `http://localhost:3001/api/complaints/${selectedComplaint.id}/status`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            status: statusUpdateForm.status,
-            notes: statusUpdateForm.notes,
-          }),
-        }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        alert("تم تحديث حالة الشكوى بنجاح");
-
-        // Update the selected complaint with new status
-        setSelectedComplaint({
-          ...selectedComplaint,
+      const { error } = await supabase
+        .from("complaints")
+        .update({ 
           status: statusUpdateForm.status,
-        });
+          resolved_at: statusUpdateForm.status === "RESOLVED" ? new Date().toISOString() : null
+        })
+        .eq("id", selectedComplaint.id);
 
-        // Reset form
-        setStatusUpdateForm({ status: "", notes: "" });
-
-        // Refresh data
-        await fetchData();
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        alert(errorData.error || "فشل تحديث حالة الشكوى");
+      if (error) {
+        console.error("Error updating complaint status:", error);
+        alert("فشل تحديث حالة الشكوى");
+        return;
       }
+
+      alert("تم تحديث حالة الشكوى بنجاح");
+
+      // Update the selected complaint with new status
+      setSelectedComplaint({
+        ...selectedComplaint,
+        status: statusUpdateForm.status,
+      });
+
+      // Reset form
+      setStatusUpdateForm({ status: "", notes: "" });
+
+      // Refresh data
+      await fetchData();
     } catch (error) {
       console.error("Error updating complaint status:", error);
       alert("حدث خطأ أثناء تحديث حالة الشكوى");
     }
   };
 
-  const fetchComplaintTypes = async (token: string) => {
+    const fetchComplaintTypes = async () => {
     try {
-      const response = await fetch("http://localhost:3001/api/types", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setComplaintTypes(Array.isArray(data) ? data : data.types || []);
+      const { data, error } = await supabase
+        .from("complaint_types")
+        .select("id, name, icon, description, is_active")
+        .order("name", { ascending: true });
+
+      if (error) {
+        console.error("Error fetching complaint types:", error);
+        return;
       }
+
+      const transformedData = data?.map((type: any) => ({
+        id: type.id,
+        name: type.name,
+        icon: type.icon,
+        description: type.description,
+        isActive: type.is_active,
+      })) || [];
+
+      setComplaintTypes(transformedData);
     } catch (error) {
       console.error("Error fetching complaint types:", error);
     }
@@ -311,9 +418,7 @@ const AdminDashboard: React.FC = () => {
 
   const exportComplaints = async (format: "excel" | "csv") => {
     try {
-      const token = localStorage.getItem("authToken");
-      if (!token) return;
-
+      // Redirect to Netlify function that generates export from Supabase
       const queryParams = new URLSearchParams();
       if (complaintFilters.status)
         queryParams.append("status", complaintFilters.status);
@@ -323,27 +428,7 @@ const AdminDashboard: React.FC = () => {
         queryParams.append("dateFrom", complaintFilters.dateFrom);
       if (complaintFilters.dateTo)
         queryParams.append("dateTo", complaintFilters.dateTo);
-
-      const response = await fetch(
-        `http://localhost:3001/api/complaints/export/${format}?${queryParams}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `complaints-${format}-${
-          new Date().toISOString().split("T")[0]
-        }.${format === "excel" ? "xlsx" : "csv"}`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }
+      window.location.href = `/.netlify/functions/complaintsExport?format=${format}&${queryParams.toString()}`;
     } catch (error) {
       console.error("Error exporting complaints:", error);
     }
@@ -355,8 +440,8 @@ const AdminDashboard: React.FC = () => {
         return "bg-blue-100 text-blue-800";
       case "IN_PROGRESS":
         return "bg-yellow-100 text-yellow-800";
-      case "BEING_RESOLVED":
-        return "bg-orange-100 text-orange-800";
+      case "NEW":
+        return "bg-blue-100 text-blue-800";
       case "OVERDUE":
         return "bg-red-100 text-red-800";
       case "RESOLVED":
@@ -372,8 +457,8 @@ const AdminDashboard: React.FC = () => {
         return "غير محلولة";
       case "IN_PROGRESS":
         return "قيد المعالجة";
-      case "BEING_RESOLVED":
-        return "يتم حلها الآن";
+      case "NEW":
+        return "غير محلولة";
       case "OVERDUE":
         return "متأخرة";
       case "RESOLVED":
@@ -434,7 +519,6 @@ const AdminDashboard: React.FC = () => {
               </h1>
               <p className="text-gray-600">مرحباً، {user.fullName}</p>
             </div>
-
           </div>
         </div>
       </div>
@@ -480,7 +564,8 @@ const AdminDashboard: React.FC = () => {
                     مرحباً بك في لوحة تحكم المدير
                   </h3>
                   <p className="text-gray-600">
-                    يمكنك إدارة الشكاوى والمستخدمين وأنواع الشكاوى من خلال التبويبات أدناه.
+                    يمكنك إدارة الشكاوى والمستخدمين وأنواع الشكاوى من خلال
+                    التبويبات أدناه.
                   </p>
                 </div>
 
@@ -583,9 +668,9 @@ const AdminDashboard: React.FC = () => {
                         className="w-full border border-gray-300 rounded-lg px-3 py-2"
                       >
                         <option value="">جميع الحالات</option>
-                        <option value="UNRESOLVED">غير محلولة</option>
+                        <option value="NEW">غير محلولة</option>
                         <option value="IN_PROGRESS">قيد المعالجة</option>
-                        <option value="BEING_RESOLVED">يتم حلها الآن</option>
+
                         <option value="OVERDUE">متأخرة</option>
                         <option value="RESOLVED">تم الحل</option>
                       </select>
@@ -789,13 +874,29 @@ const AdminDashboard: React.FC = () => {
                     <h3 className="text-lg font-medium text-gray-900">
                       إدارة المستخدمين
                     </h3>
-                    <button
-                      onClick={() => setShowUserModal(true)}
-                      className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                      <Plus className="w-4 h-4 ml-2" />
-                      إضافة مستخدم
-                    </button>
+                    <div className="flex space-x-reverse space-x-2">
+                      <button
+                        onClick={handleCreateTestUser}
+                        className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                      >
+                        <User className="w-4 h-4 ml-2" />
+                        إنشاء مستخدم تجريبي
+                      </button>
+                      <button
+                        onClick={handleMigrateUsers}
+                        className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                      >
+                        <User className="w-4 h-4 ml-2" />
+                        ترحيل المستخدمين
+                      </button>
+                      <button
+                        onClick={() => setShowUserModal(true)}
+                        className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                      >
+                        <Plus className="w-4 h-4 ml-2" />
+                        إضافة مستخدم
+                      </button>
+                    </div>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
@@ -1244,9 +1345,9 @@ const AdminDashboard: React.FC = () => {
                         className="w-full border border-gray-300 rounded-lg px-3 py-2"
                       >
                         <option value="">اختر الحالة</option>
-                        <option value="UNRESOLVED">غير محلولة</option>
+                        <option value="NEW">غير محلولة</option>
                         <option value="IN_PROGRESS">قيد المعالجة</option>
-                        <option value="BEING_RESOLVED">يتم حلها الآن</option>
+
                         <option value="OVERDUE">متأخرة</option>
                         <option value="RESOLVED">تم الحل</option>
                       </select>

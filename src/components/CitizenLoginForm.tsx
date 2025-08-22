@@ -40,20 +40,17 @@ const CitizenLoginForm: React.FC<CitizenLoginFormProps> = ({ onNavigate }) => {
 
     setLoading(true);
     try {
-      const response = await fetch(
-        "http://localhost:3001/api/auth/citizen/login",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fullName: formData.fullName,
-            nationalId: formData.nationalId,
-            phone: formData.phone,
-          }),
-        }
-      );
+      const response = await fetch("/.netlify/functions/verifyCitizen", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fullName: formData.fullName,
+          nationalId: formData.nationalId,
+          phone: formData.phone,
+        }),
+      });
 
       if (response.ok) {
         const data = await response.json();

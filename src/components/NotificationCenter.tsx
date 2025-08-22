@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { supabase } from "../utils/supabaseClient.ts";
 import {
   Bell,
   X,
@@ -39,18 +40,31 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   const fetchNotifications = async () => {
     try {
-      const token = localStorage.getItem("authToken");
-      if (!token) return;
-
-      const response = await fetch("http://localhost:3001/api/notifications", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setNotifications(data.notifications);
+      // Example: read from a notifications table if exists; otherwise, synthesize from complaint_logs
+      const { data, error } = await supabase
+        .from("complaint_logs")
+        .select(
+          "id,action,old_status,new_status,notes,created_at, complaint:complaints(title)"
+        )
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (!error && data) {
+        const mapped = (data as any[]).map((log) => ({
+          id: log.id,
+          type: mapType(log.action),
+          title: mapTitle(log.action),
+          message: mapMessage(
+            log.action,
+            log.old_status,
+            log.new_status,
+            log.notes
+          ),
+          complaintId: "",
+          complaintTitle: log.complaint?.title || "",
+          createdAt: log.created_at,
+          read: false,
+        }));
+        setNotifications(mapped as any);
       }
     } catch (error) {
       console.error("Error fetching notifications:", error);
@@ -59,28 +73,61 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
     }
   };
 
+  const mapType = (action: string) => {
+    switch (action) {
+      case "STATUS_CHANGED":
+        return "status_update";
+      case "ASSIGNED":
+        return "assigned";
+      case "RESOLVED":
+        return "resolved";
+      case "INTERNAL_NOTE":
+        return "new_message";
+      default:
+        return "general";
+    }
+  };
+  const mapTitle = (action: string) => {
+    switch (action) {
+      case "STATUS_CHANGED":
+        return "تحديث حالة الشكوى";
+      case "ASSIGNED":
+        return "تم تخصيص الشكوى";
+      case "RESOLVED":
+        return "تم حل الشكوى";
+      case "INTERNAL_NOTE":
+        return "تم إضافة ملاحظة";
+      default:
+        return "إشعار جديد";
+    }
+  };
+  const mapMessage = (
+    action: string,
+    oldStatus?: string,
+    newStatus?: string,
+    notes?: string
+  ) => {
+    switch (action) {
+      case "STATUS_CHANGED":
+        return `تم تغيير حالة الشكوى من ${oldStatus || ""} إلى ${
+          newStatus || ""
+        }${notes ? ` - ${notes}` : ""}`;
+      case "ASSIGNED":
+        return "تم تخصيص الشكوى لموظف";
+      case "RESOLVED":
+        return "تم حل الشكوى";
+      case "INTERNAL_NOTE":
+        return `ملاحظة: ${notes || ""}`;
+      default:
+        return "تم تحديث الشكوى";
+    }
+  };
+
   const markAsRead = async (notificationId: string) => {
     try {
-      const token = localStorage.getItem("authToken");
-      if (!token) return;
-
-      const response = await fetch(
-        `http://localhost:3001/api/notifications/${notificationId}/read`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n))
       );
-
-      if (response.ok) {
-        setNotifications((prev) =>
-          prev.map((notif) =>
-            notif.id === notificationId ? { ...notif, read: true } : notif
-          )
-        );
-      }
     } catch (error) {
       console.error("Error marking notification as read:", error);
     }
@@ -88,24 +135,9 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   const markAllAsRead = async () => {
     try {
-      const token = localStorage.getItem("authToken");
-      if (!token) return;
-
-      const response = await fetch(
-        "http://localhost:3001/api/notifications/read-all",
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+      setNotifications((prev) =>
+        prev.map((notif) => ({ ...notif, read: true }))
       );
-
-      if (response.ok) {
-        setNotifications((prev) =>
-          prev.map((notif) => ({ ...notif, read: true }))
-        );
-      }
     } catch (error) {
       console.error("Error marking all notifications as read:", error);
     }
