@@ -50,12 +50,14 @@ const CitizenDashboard: React.FC = () => {
         return;
       }
 
+      // Get complaints by national ID and phone (since complainant doesn't have auth_user_id)
       const { data, error } = await supabase
         .from("complaints")
         .select(
           "id,title,description,status,created_at,resolved_at, location, type:complaint_types(name,icon)"
         )
-        .eq("complainant_id", complainant.id)
+        .eq("national_id", complainant.nationalId || "")
+        .eq("phone", complainant.phone)
         .order("created_at", { ascending: false });
       if (!error && data) {
         const mapped = (data as any[]).map((c) => ({

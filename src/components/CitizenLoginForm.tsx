@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Phone, User, Shield, ArrowRight } from "lucide-react";
+import { supabase } from "../utils/supabaseClient";
 
 interface CitizenLoginFormProps {
   onNavigate: (page: string) => void;
@@ -40,27 +41,36 @@ const CitizenLoginForm: React.FC<CitizenLoginFormProps> = ({ onNavigate }) => {
 
     setLoading(true);
     try {
-      const response = await fetch("/.netlify/functions/verifyCitizen", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          fullName: formData.fullName,
-          nationalId: formData.nationalId,
-          phone: formData.phone,
-        }),
-      });
+      // Check if citizen exists in the database
+      const { data: existingComplaints, error } = await supabase
+        .from("complaints")
+        .select("id, full_name, phone")
+        .eq("national_id", formData.nationalId)
+        .eq("phone", formData.phone)
+        .limit(1);
 
-      if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem("authToken", data.token);
-        localStorage.setItem("complainant", JSON.stringify(data.complainant));
+      if (error) {
+        console.error("Database error:", error);
+        setError("خطأ في الاتصال بقاعدة البيانات");
+        return;
+      }
+
+      if (existingComplaints && existingComplaints.length > 0) {
+        const complainant = existingComplaints[0];
+        const complainantData = {
+          id: complainant.id,
+          fullName: complainant.full_name,
+          phone: complainant.phone,
+        };
+
+        // Store in localStorage for persistence
+        localStorage.setItem("complainant", JSON.stringify(complainantData));
         localStorage.setItem("userType", "complainant");
         window.location.reload();
       } else {
-        const data = await response.json();
-        setError(data.message || "بيانات غير صحيحة");
+        setError(
+          "لم يتم العثور على شكاوى بهذه البيانات. يرجى التأكد من صحة البيانات أو تقديم شكوى جديدة."
+        );
       }
     } catch (error) {
       setError("حدث خطأ في الاتصال");

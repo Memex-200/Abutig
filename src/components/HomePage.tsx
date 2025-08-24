@@ -171,6 +171,18 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                 </button>
               </div>
             </div>
+            
+            {/* Admin Setup Link - Only show in development */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="mt-8 text-center">
+                <button
+                  onClick={() => window.location.href = '/admin-setup'}
+                  className="text-sm text-blue-200 hover:text-white underline"
+                >
+                  إعداد النظام (للمطورين فقط)
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </section>

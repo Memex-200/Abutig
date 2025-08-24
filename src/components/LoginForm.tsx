@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { LogIn, User, Phone, CreditCard, AlertCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { supabase } from "../utils/supabaseClient.ts";
+import { supabase } from "../utils/supabaseClient";
 
 interface LoginFormProps {
   onNavigate: (page: string) => void;
@@ -50,11 +50,11 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
       } else if (data.session) {
         const authUserId = data.session.user.id;
         const { data: profiles, error: profileError } = await supabase
-          .from('users')
-          .select('id,email,full_name,role,is_active')
-          .eq('auth_user_id', authUserId)
+          .from("users")
+          .select("id,email,full_name,role,is_active")
+          .eq("auth_user_id", authUserId)
           .limit(1);
-        
+
         if (profileError) {
           console.error("Profile fetch error:", profileError);
           setError("خطأ في جلب بيانات المستخدم");
@@ -62,22 +62,22 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
           setError("لا يوجد ملف مستخدم مرتبط بهذا الحساب");
         } else {
           const profile = profiles[0] as any;
-          
+
           // Check if user is active
           if (!profile.is_active) {
             setError("الحساب معطل، يرجى التواصل مع الإدارة");
             return;
           }
-          
+
           const mappedUser = {
             id: profile.id,
             email: profile.email,
             fullName: profile.full_name,
             role: profile.role,
           } as any;
-          
+
           login(mappedUser, "");
-          
+
           if (mappedUser.role === "ADMIN") {
             onNavigate("admin-dashboard");
           } else {
@@ -99,17 +99,34 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
     setError("");
 
     try {
-      const response = await fetch('/.netlify/functions/verifyCitizen', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(citizenForm),
-      });
-      const result = await response.json();
-      if (response.ok) {
-        loginComplainant(result.complainant, "");
+      // Check if citizen exists in the database
+      const { data: existingComplaints, error } = await supabase
+        .from("complaints")
+        .select("id, full_name, phone")
+        .eq("national_id", citizenForm.nationalId)
+        .eq("phone", citizenForm.phone)
+        .limit(1);
+
+      if (error) {
+        console.error("Database error:", error);
+        setError("خطأ في الاتصال بقاعدة البيانات");
+        return;
+      }
+
+      if (existingComplaints && existingComplaints.length > 0) {
+        const complainant = existingComplaints[0];
+        const complainantData = {
+          id: complainant.id,
+          fullName: complainant.full_name,
+          phone: complainant.phone,
+          nationalId: citizenForm.nationalId,
+        };
+        loginComplainant(complainantData, "");
         onNavigate("citizen-dashboard");
       } else {
-        setError(result.error || "خطأ في التحقق");
+        setError(
+          "لم يتم العثور على شكاوى بهذه البيانات. يرجى التأكد من صحة البيانات أو تقديم شكوى جديدة."
+        );
       }
     } catch (error) {
       setError("خطأ في الاتصال بالخادم");

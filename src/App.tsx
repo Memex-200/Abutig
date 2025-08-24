@@ -16,6 +16,7 @@ import ComplaintForm from "./components/ComplaintForm";
 import CitizenDashboard from "./components/CitizenDashboard";
 import EmployeeDashboard from "./components/EmployeeDashboard";
 import AdminDashboard from "./components/AdminDashboard";
+import AdminSetup from "./components/AdminSetup";
 import LoginForm from "./components/LoginForm";
 import CitizenLoginForm from "./components/CitizenLoginForm";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -47,6 +48,13 @@ const AppContent: React.FC = () => {
     if (user?.role === "EMPLOYEE") return "employee-dashboard";
     if (user?.role === "ADMIN") return "admin-dashboard";
     return "home";
+  };
+
+  // Check if we need to show admin setup
+  const shouldShowAdminSetup = () => {
+    // Show admin setup if no users exist or if we're in development
+    return window.location.search.includes("setup=true") || 
+           window.location.pathname === "/admin-setup";
   };
 
   // التوجيه التلقائي بعد تسجيل الدخول مع احترام الصفحات اليدوية (مثل صفحة تقديم الشكوى)
@@ -99,6 +107,11 @@ const AppContent: React.FC = () => {
   };
 
   const renderCurrentPage = () => {
+    // Show admin setup if needed
+    if (shouldShowAdminSetup()) {
+      return <AdminSetup />;
+    }
+
     switch (currentPage) {
       case "home":
         return <HomePage onNavigate={handleNavigation} />;

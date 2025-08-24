@@ -34,63 +34,69 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
   const fallbackTypes: ComplaintType[] = [
     {
       id: "1",
-      name: "شكوى بناء مخالف",
-      description: "بناء بدون ترخيص أو مخالف للقوانين",
-      icon: "🏚️",
+      name: "مخالفات البناء",
+      description: "مخالفات البناء والبناء بدون ترخيص",
+      icon: "🏗️",
     },
     {
       id: "2",
-      name: "شكوى صرف صحي",
-      description: "مشاكل في شبكة الصرف الصحي",
+      name: "مشاكل الصرف الصحي",
+      description: "مشاكل في شبكة الصرف الصحي والصرف",
       icon: "🚽",
     },
     {
       id: "3",
-      name: "شكوى نظافة أو قمامة",
-      description: "تراكم القمامة أو عدم النظافة",
-      icon: "♻️",
+      name: "النظافة وجمع القمامة",
+      description: "شكاوى النظافة العامة وجمع القمامة",
+      icon: "🗑️",
     },
     {
       id: "4",
-      name: "شكوى طريق أو رصف",
-      description: "تلف في الطرق أو الأرصفة",
-      icon: "🚧",
-    },
-    {
-      id: "5",
-      name: "شكوى إنارة",
-      description: "مشاكل في الإنارة العامة",
+      name: "إنارة الشوارع والكهرباء",
+      description: "مشاكل في إنارة الشوارع والكهرباء",
       icon: "💡",
     },
     {
+      id: "5",
+      name: "صيانة الطرق",
+      description: "صيانة الطرق والأرصفة",
+      icon: "🛣️",
+    },
+    {
       id: "6",
-      name: "شكوى ضعف أو انقطاع الإنترنت",
-      description: "ضعف أو انقطاع الإنترنت / الشبكة",
-      icon: "📶",
+      name: "مشاكل إمداد المياه",
+      description: "مشاكل في إمداد وتوزيع المياه",
+      icon: "💧",
     },
     {
       id: "7",
-      name: "شكوى تعديات على ممتلكات عامة",
-      description: "تعديات على الأراضي أو الممتلكات العامة",
-      icon: "🌳",
+      name: "مشاكل المرور والمواقف",
+      description: "إشارات المرور ومشاكل المواقف",
+      icon: "🚗",
     },
     {
       id: "8",
-      name: "شكوى صيانة أو كهرباء",
-      description: "مشاكل في الصيانة أو الكهرباء",
-      icon: "🛠️",
+      name: "الحدائق والمساحات الخضراء",
+      description: "صيانة الحدائق العامة والمساحات الخضراء",
+      icon: "🌳",
     },
     {
       id: "9",
-      name: "شكوى أمنية أو تعدي",
-      description: "مشاكل أمنية أو تعديات",
-      icon: "🚓",
+      name: "شكاوى الضوضاء",
+      description: "شكاوى الضوضاء والإزعاج",
+      icon: "🔊",
     },
     {
       id: "10",
+      name: "الأمان والسلامة العامة",
+      description: "مخاوف الأمان والسلامة العامة",
+      icon: "🛡️",
+    },
+    {
+      id: "11",
       name: "أخرى",
-      description: "شكاوى أخرى (مع تحديد التفاصيل)",
-      icon: "✉️",
+      description: "شكاوى أخرى لا تنتمي للفئات السابقة",
+      icon: "📝",
     },
   ];
   const [loading, setLoading] = useState(false);
@@ -173,25 +179,62 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
         return;
       }
 
-      // Submit via Netlify function (handles citizen ensure + complaint insert)
-      const submitRes = await fetch("/.netlify/functions/submitComplaint", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fullName: formData.fullName,
-          phone: formData.phone,
-          nationalId: formData.nationalId,
-          email: formData.email,
-          typeId: formData.typeId,
+      // First, create or get the citizen user
+      let citizenId: string;
+
+      // Check if citizen exists
+      const { data: existingCitizen, error: citizenCheckError } = await supabase
+        .from("users")
+        .select("id")
+        .eq("national_id", formData.nationalId)
+        .eq("phone", formData.phone)
+        .single();
+
+      if (existingCitizen) {
+        citizenId = existingCitizen.id;
+      } else {
+        // Create new citizen user
+        const { data: newCitizen, error: newCitizenError } = await supabase
+          .from("users")
+          .insert({
+            full_name: formData.fullName,
+            phone: formData.phone,
+            national_id: formData.nationalId,
+            email: formData.email || null,
+            role: "CITIZEN",
+            is_active: true,
+          })
+          .select("id")
+          .single();
+
+        if (newCitizenError) {
+          console.error("Citizen creation error:", newCitizenError);
+          throw new Error("فشل إنشاء ملف المواطن");
+        }
+        citizenId = newCitizen.id;
+      }
+
+      // Insert complaint
+      const { data: complaintData, error: complaintError } = await supabase
+        .from("complaints")
+        .insert({
+          citizen_id: citizenId,
+          type_id: formData.typeId,
           title: formData.title,
           description: formData.description,
           location: formData.location || null,
-        }),
-      });
-      const submit = await submitRes.json();
-      if (!submitRes.ok) throw new Error(submit.error || "فشل إرسال الشكوى");
+          status: "NEW",
+          national_id: formData.nationalId,
+        })
+        .select("id")
+        .single();
 
-      const complaintId = submit.complaintId as string;
+      if (complaintError) {
+        console.error("Complaint insert error:", complaintError);
+        throw new Error(complaintError.message || "فشل إرسال الشكوى");
+      }
+
+      const complaintId = complaintData.id;
 
       // Upload files to Supabase Storage (optional)
       if (files.length > 0) {
@@ -215,9 +258,10 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
 
       // Auto-login citizen context (create complainant object from submitted data)
       const complainantData = {
-        id: submit.complaintId, // Use complaint ID as temporary ID
+        id: complaintId, // Use complaint ID as temporary ID
         fullName: formData.fullName,
         phone: formData.phone,
+        nationalId: formData.nationalId,
       };
       loginComplainant(complainantData, "");
 

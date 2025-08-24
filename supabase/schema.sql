@@ -73,65 +73,144 @@ alter table public.users enable row level security;
 alter table public.complaints enable row level security;
 alter table public.complaint_files enable row level security;
 alter table public.complaint_history enable row level security;
+alter table public.complaint_types enable row level security;
+alter table public.settings enable row level security;
 
--- Users policies
+-- Drop existing policies if they exist
+drop policy if exists users_self_access on public.users;
+drop policy if exists users_self_update on public.users;
+drop policy if exists complaints_citizen_select on public.complaints;
+drop policy if exists complaints_citizen_insert on public.complaints;
+drop policy if exists files_citizen_select on public.complaint_files;
+drop policy if exists files_citizen_insert on public.complaint_files;
+drop policy if exists history_citizen_select on public.complaint_history;
+drop policy if exists admin_full_access_users on public.users;
+drop policy if exists admin_full_access_complaints on public.complaints;
+drop policy if exists admin_full_access_complaint_types on public.complaint_types;
+drop policy if exists admin_full_access_complaint_files on public.complaint_files;
+drop policy if exists admin_full_access_complaint_history on public.complaint_history;
+drop policy if exists admin_full_access_settings on public.settings;
+drop policy if exists employee_read_complaints on public.complaints;
+drop policy if exists employee_read_complaint_types on public.complaint_types;
+drop policy if exists citizen_read_own_complaints on public.complaints;
+drop policy if exists public_read_complaint_types on public.complaint_types;
+drop policy if exists public_insert_complaints on public.complaints;
+
+-- Allow user creation during setup (temporary policy)
+create policy allow_user_creation on public.users
+  for insert with check (true);
+
+-- Allow user updates for existing users
+create policy allow_user_updates on public.users
+  for update using (auth_user_id = auth.uid() or role = 'ADMIN');
+
+-- Allow users to read their own profile
 create policy users_self_access on public.users
-  for select using (
-    auth.uid() is not null and auth.uid() = auth_user_id
-  );
-create policy users_self_update on public.users
-  for update using (
-    auth.uid() is not null and auth.uid() = auth_user_id
-  ) with check (
-    auth.uid() = auth_user_id and role = role and is_active = is_active
-  );
--- Employees/Admins can view all (handled via service role or add JWT claims-based check if using custom JWT)
+  for select using (auth_user_id = auth.uid());
 
--- Complaints policies
-create policy complaints_citizen_select on public.complaints
+-- Admin policies (full access for admin account)
+create policy admin_full_access_users on public.users
+  for all using (
+    exists (
+      select 1 from public.users u
+      where u.auth_user_id = auth.uid() and u.role = 'ADMIN' and u.is_active = true
+    )
+  );
+
+create policy admin_full_access_complaints on public.complaints
+  for all using (
+    exists (
+      select 1 from public.users u
+      where u.auth_user_id = auth.uid() and u.role = 'ADMIN' and u.is_active = true
+    )
+  );
+
+create policy admin_full_access_complaint_types on public.complaint_types
+  for all using (
+    exists (
+      select 1 from public.users u
+      where u.auth_user_id = auth.uid() and u.role = 'ADMIN' and u.is_active = true
+    )
+  );
+
+create policy admin_full_access_complaint_files on public.complaint_files
+  for all using (
+    exists (
+      select 1 from public.users u
+      where u.auth_user_id = auth.uid() and u.role = 'ADMIN' and u.is_active = true
+    )
+  );
+
+create policy admin_full_access_complaint_history on public.complaint_history
+  for all using (
+    exists (
+      select 1 from public.users u
+      where u.auth_user_id = auth.uid() and u.role = 'ADMIN' and u.is_active = true
+    )
+  );
+
+create policy admin_full_access_settings on public.settings
+  for all using (
+    exists (
+      select 1 from public.users u
+      where u.auth_user_id = auth.uid() and u.role = 'ADMIN' and u.is_active = true
+    )
+  );
+
+-- Employee policies (read access to complaints and types)
+create policy employee_read_complaints on public.complaints
+  for select using (
+    exists (
+      select 1 from public.users u
+      where u.auth_user_id = auth.uid() and u.role = 'EMPLOYEE' and u.is_active = true
+    )
+  );
+
+create policy employee_read_complaint_types on public.complaint_types
+  for select using (
+    exists (
+      select 1 from public.users u
+      where u.auth_user_id = auth.uid() and u.role = 'EMPLOYEE' and u.is_active = true
+    )
+  );
+
+-- Citizen policies (read-only access to their own complaints)
+create policy citizen_read_own_complaints on public.complaints
   for select using (
     exists (
       select 1 from public.users u
       where u.id = complaints.citizen_id and u.auth_user_id = auth.uid()
     )
   );
-create policy complaints_citizen_insert on public.complaints
-  for insert with check (
-    exists (
-      select 1 from public.users u
-      where u.id = citizen_id and u.auth_user_id = auth.uid()
-    )
-  );
 
--- Files policies
-create policy files_citizen_select on public.complaint_files
-  for select using (
-    exists (
-      select 1 from public.complaints c
-      join public.users u on u.id = c.citizen_id
-      where c.id = complaint_files.complaint_id and u.auth_user_id = auth.uid()
-    )
-  );
-create policy files_citizen_insert on public.complaint_files
-  for insert with check (
-    exists (
-      select 1 from public.complaints c
-      join public.users u on u.id = c.citizen_id
-      where c.id = complaint_id and u.auth_user_id = auth.uid()
-    )
-  );
+-- Public read access to complaint types (for complaint form)
+create policy public_read_complaint_types on public.complaint_types
+  for select using (true);
 
--- History policies
-create policy history_citizen_select on public.complaint_history
-  for select using (
-    exists (
-      select 1 from public.complaints c
-      join public.users u on u.id = c.citizen_id
-      where c.id = complaint_history.complaint_id and u.auth_user_id = auth.uid()
-    )
-  );
+-- Insert policy for complaints (for complaint form)
+create policy public_insert_complaints on public.complaints
+  for insert with check (true);
 
--- Note: Staff/Admin broader access should be enforced via service role on serverless functions,
--- or by issuing custom JWTs with role claims and extending policies accordingly.
+-- Function to automatically create user profile on auth signup
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.users (auth_user_id, full_name, email, role, is_active)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data->>'full_name', 'User'),
+    new.email,
+    'CITIZEN',
+    true
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+-- Trigger to create user profile on signup
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
 
 

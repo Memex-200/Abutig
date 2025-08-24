@@ -31,7 +31,8 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { supabase, supabaseAdmin } from "../utils/supabaseClient.ts";
+import { supabase } from "../utils/supabaseClient";
+import ComplaintTypeManager from "./ComplaintTypeManager";
 
 interface Complaint {
   id: string;
@@ -156,49 +157,58 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-    const fetchComplaints = async () => {
+  const fetchComplaints = async () => {
     try {
       let query = supabase
         .from("complaints")
-        .select(`
+        .select(
+          `
           id, title, description, status, created_at, resolved_at, priority, location,
           type:complaint_types(id, name, icon),
           citizen:users!complaints_citizen_id_fkey(id, full_name, phone, email)
-        `)
+        `
+        )
         .order("created_at", { ascending: false });
 
       // Apply filters
-      if (complaintFilters.status) query = query.eq("status", complaintFilters.status);
-      if (complaintFilters.type) query = query.eq("type_id", complaintFilters.type);
-      if (complaintFilters.dateFrom) query = query.gte("created_at", complaintFilters.dateFrom);
-      if (complaintFilters.dateTo) query = query.lte("created_at", complaintFilters.dateTo);
+      if (complaintFilters.status)
+        query = query.eq("status", complaintFilters.status);
+      if (complaintFilters.type)
+        query = query.eq("type_id", complaintFilters.type);
+      if (complaintFilters.dateFrom)
+        query = query.gte("created_at", complaintFilters.dateFrom);
+      if (complaintFilters.dateTo)
+        query = query.lte("created_at", complaintFilters.dateTo);
       if (searchTerm) query = query.ilike("title", `%${searchTerm}%`);
 
       const { data, error } = await query;
-      
+
       if (error) {
         console.error("Error fetching complaints:", error);
         return;
       }
 
       // Transform data
-      const transformedData = data?.map((complaint: any) => ({
-        id: complaint.id,
-        title: complaint.title,
-        description: complaint.description,
-        status: complaint.status,
-        createdAt: complaint.created_at,
-        resolvedAt: complaint.resolved_at,
-        priority: complaint.priority,
-        location: complaint.location,
-        type: complaint.type,
-        complainant: complaint.citizen ? {
-          id: complaint.citizen.id,
-          fullName: complaint.citizen.full_name,
-          phone: complaint.citizen.phone,
-          email: complaint.citizen.email,
-        } : null,
-      })) || [];
+      const transformedData =
+        data?.map((complaint: any) => ({
+          id: complaint.id,
+          title: complaint.title,
+          description: complaint.description,
+          status: complaint.status,
+          createdAt: complaint.created_at,
+          resolvedAt: complaint.resolved_at,
+          priority: complaint.priority,
+          location: complaint.location,
+          type: complaint.type,
+          complainant: complaint.citizen
+            ? {
+                id: complaint.citizen.id,
+                fullName: complaint.citizen.full_name,
+                phone: complaint.citizen.phone,
+                email: complaint.citizen.email,
+              }
+            : null,
+        })) || [];
 
       setComplaints(transformedData);
     } catch (error) {
@@ -206,7 +216,7 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-    const fetchUsers = async () => {
+  const fetchUsers = async () => {
     try {
       const { data, error } = await supabase
         .from("users")
@@ -218,14 +228,15 @@ const AdminDashboard: React.FC = () => {
         return;
       }
 
-      const transformedData = data?.map((user: any) => ({
-        id: user.id,
-        fullName: user.full_name,
-        email: user.email,
-        role: user.role,
-        isActive: user.is_active,
-        createdAt: user.created_at,
-      })) || [];
+      const transformedData =
+        data?.map((user: any) => ({
+          id: user.id,
+          fullName: user.full_name,
+          email: user.email,
+          role: user.role,
+          isActive: user.is_active,
+          createdAt: user.created_at,
+        })) || [];
 
       setUsers(transformedData);
     } catch (error) {
@@ -235,14 +246,15 @@ const AdminDashboard: React.FC = () => {
 
   const handleCreateUser = async () => {
     try {
-      // Create auth user
-      const { data: authRes, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      // Create auth user using regular signup (admin will need to confirm email)
+      const { data: authRes, error: authError } = await supabase.auth.signUp({
         email: userForm.email,
-        email_confirm: true,
         password: userForm.password,
-        user_metadata: {
-          full_name: userForm.fullName,
-          role: userForm.role,
+        options: {
+          data: {
+            full_name: userForm.fullName,
+            role: userForm.role,
+          },
         },
       });
 
@@ -253,22 +265,18 @@ const AdminDashboard: React.FC = () => {
       }
 
       // Create profile row
-      const { error: profileError } = await supabaseAdmin
-        .from("users")
-        .insert({
-          email: userForm.email,
-          full_name: userForm.fullName,
-          phone: userForm.phone || null,
-          national_id: userForm.nationalId || null,
-          role: userForm.role,
-          is_active: true,
-          auth_user_id: authRes.user.id,
-        });
+      const { error: profileError } = await supabase.from("users").insert({
+        email: userForm.email,
+        full_name: userForm.fullName,
+        phone: userForm.phone || null,
+        national_id: userForm.nationalId || null,
+        role: userForm.role,
+        is_active: true,
+        auth_user_id: authRes.user.id,
+      });
 
       if (profileError) {
         console.error("Profile creation error:", profileError);
-        // Clean up auth user if profile creation fails
-        await supabaseAdmin.auth.admin.deleteUser(authRes.user.id);
         alert("فشل إنشاء ملف المستخدم");
         return;
       }
@@ -292,29 +300,11 @@ const AdminDashboard: React.FC = () => {
 
   const handleMigrateUsers = async () => {
     try {
-      const response = await fetch("/.netlify/functions/migrateUsers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      const result = await response.json();
-
-      if (response.ok) {
-        if (result.migrated && result.migrated.length > 0) {
-          alert(
-            `تم ترحيل ${
-              result.migrated.length
-            } مستخدم بنجاح. كلمات المرور الافتراضية:\n${result.migrated
-              .map((u: any) => `${u.email}: ${u.default_password}`)
-              .join("\n")}`
-          );
-        } else {
-          alert(result.message || "لا يوجد مستخدمين يحتاجون للترحيل");
-        }
-        await fetchUsers();
-      } else {
-        alert(result.error || "فشل ترحيل المستخدمين");
-      }
+      // This functionality would need to be implemented differently
+      // For now, we'll show a message that this feature is not available
+      alert(
+        "ميزة ترحيل المستخدمين غير متاحة في النسخة الحالية. يرجى إضافة المستخدمين يدوياً."
+      );
     } catch (error) {
       console.error("Error migrating users:", error);
       alert("حدث خطأ أثناء ترحيل المستخدمين");
@@ -323,20 +313,39 @@ const AdminDashboard: React.FC = () => {
 
   const handleCreateTestUser = async () => {
     try {
-      const response = await fetch("/.netlify/functions/createTestUser", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      // Create a test user directly in Supabase
+      const testEmail = `test${Date.now()}@abuttig.gov`;
+      const testPassword = "Test123!";
+
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: testEmail,
+        password: testPassword,
       });
 
-      const result = await response.json();
+      if (authError) {
+        alert(`فشل إنشاء المستخدم التجريبي: ${authError.message}`);
+        return;
+      }
 
-      if (response.ok) {
+      if (authData.user) {
+        // Create user profile
+        const { error: profileError } = await supabase.from("users").insert({
+          auth_user_id: authData.user.id,
+          email: testEmail,
+          full_name: "مستخدم تجريبي",
+          role: "EMPLOYEE",
+          is_active: true,
+        });
+
+        if (profileError) {
+          alert(`فشل إنشاء ملف المستخدم: ${profileError.message}`);
+          return;
+        }
+
         alert(
-          `تم إنشاء المستخدم التجريبي بنجاح!\n\nبيانات تسجيل الدخول:\nالبريد الإلكتروني: ${result.login_credentials.email}\nكلمة المرور: ${result.login_credentials.password}`
+          `تم إنشاء المستخدم التجريبي بنجاح!\n\nبيانات تسجيل الدخول:\nالبريد الإلكتروني: ${testEmail}\nكلمة المرور: ${testPassword}`
         );
         await fetchUsers();
-      } else {
-        alert(result.error || "فشل إنشاء المستخدم التجريبي");
       }
     } catch (error) {
       console.error("Error creating test user:", error);
@@ -350,9 +359,12 @@ const AdminDashboard: React.FC = () => {
     try {
       const { error } = await supabase
         .from("complaints")
-        .update({ 
+        .update({
           status: statusUpdateForm.status,
-          resolved_at: statusUpdateForm.status === "RESOLVED" ? new Date().toISOString() : null
+          resolved_at:
+            statusUpdateForm.status === "RESOLVED"
+              ? new Date().toISOString()
+              : null,
         })
         .eq("id", selectedComplaint.id);
 
@@ -381,7 +393,7 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-    const fetchComplaintTypes = async () => {
+  const fetchComplaintTypes = async () => {
     try {
       const { data, error } = await supabase
         .from("complaint_types")
@@ -393,13 +405,14 @@ const AdminDashboard: React.FC = () => {
         return;
       }
 
-      const transformedData = data?.map((type: any) => ({
-        id: type.id,
-        name: type.name,
-        icon: type.icon,
-        description: type.description,
-        isActive: type.is_active,
-      })) || [];
+      const transformedData =
+        data?.map((type: any) => ({
+          id: type.id,
+          name: type.name,
+          icon: type.icon,
+          description: type.description,
+          isActive: type.is_active,
+        })) || [];
 
       setComplaintTypes(transformedData);
     } catch (error) {
@@ -418,17 +431,10 @@ const AdminDashboard: React.FC = () => {
 
   const exportComplaints = async (format: "excel" | "csv") => {
     try {
-      // Redirect to Netlify function that generates export from Supabase
-      const queryParams = new URLSearchParams();
-      if (complaintFilters.status)
-        queryParams.append("status", complaintFilters.status);
-      if (complaintFilters.type)
-        queryParams.append("type", complaintFilters.type);
-      if (complaintFilters.dateFrom)
-        queryParams.append("dateFrom", complaintFilters.dateFrom);
-      if (complaintFilters.dateTo)
-        queryParams.append("dateTo", complaintFilters.dateTo);
-      window.location.href = `/.netlify/functions/complaintsExport?format=${format}&${queryParams.toString()}`;
+      // Export functionality - for now, we'll show a message
+      alert(
+        "ميزة التصدير غير متاحة في النسخة الحالية. يمكنك استخدام ميزة النسخ من الجدول."
+      );
     } catch (error) {
       console.error("Error exporting complaints:", error);
     }
@@ -978,56 +984,7 @@ const AdminDashboard: React.FC = () => {
             )}
 
             {activeTab === "types" && (
-              <div className="space-y-6">
-                <div className="bg-white p-6 rounded-lg border border-gray-200">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-medium text-gray-900">
-                      أنواع الشكاوى
-                    </h3>
-                    <button className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                      <Plus className="w-4 h-4 ml-2" />
-                      إضافة نوع
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {complaintTypes.map((type) => (
-                      <div
-                        key={type.id}
-                        className="border border-gray-200 rounded-lg p-4"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center">
-                            {getTypeIcon(type.icon)}
-                            <span className="text-sm font-medium text-gray-900 mr-2">
-                              {type.name}
-                            </span>
-                          </div>
-                          <span
-                            className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              type.isActive
-                                ? "bg-green-100 text-green-800"
-                                : "bg-red-100 text-red-800"
-                            }`}
-                          >
-                            {type.isActive ? "نشط" : "غير نشط"}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600 mb-3">
-                          {type.description}
-                        </p>
-                        <div className="flex space-x-reverse space-x-2">
-                          <button className="text-blue-600 hover:text-blue-900">
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button className="text-red-600 hover:text-red-900">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              <ComplaintTypeManager />
             )}
 
             {activeTab === "settings" && (

@@ -21,14 +21,11 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.55.0",
-    "dotenv": "^17.2.1",
     "lucide-react": "^0.294.0",
-    "node-fetch": "^3.3.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
-    "@netlify/functions": "^4.2.2",
     "@playwright/test": "^1.40.0",
     "@types/jest": "^29.5.8",
     "@types/react": "^18.2.43",

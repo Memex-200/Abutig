@@ -81,7 +81,7 @@ const EmployeeDashboard: React.FC = () => {
       let query = supabase
         .from("complaints")
         .select(
-          "id,title,description,status,priority,location,created_at, resolved_at, complainant:complainants(full_name,phone), type:complaint_types(name,icon)"
+          "id,title,description,status,priority,location,created_at, resolved_at, citizen:users!complaints_citizen_id_fkey(full_name,phone), type:complaint_types(name,icon)"
         )
         .order("created_at", { ascending: false });
 
@@ -107,8 +107,8 @@ const EmployeeDashboard: React.FC = () => {
           createdAt: c.created_at,
           resolvedAt: c.resolved_at,
           complainant: {
-            fullName: c.complainant?.full_name,
-            phone: c.complainant?.phone,
+            fullName: c.citizen?.full_name,
+            phone: c.citizen?.phone,
           },
           priority: c.priority,
           location: c.location,
