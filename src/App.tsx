@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, lazy, Suspense } from "react";
 import {
   Home,
   FileText,
@@ -11,22 +11,25 @@ import {
   Menu,
   X,
 } from "lucide-react";
-import HomePage from "./components/HomePage";
-import ComplaintForm from "./components/ComplaintForm";
-import CitizenDashboard from "./components/CitizenDashboard";
-import EmployeeDashboard from "./components/EmployeeDashboard";
-import AdminDashboard from "./components/AdminDashboard";
-import AdminSetup from "./components/AdminSetup";
-import LoginForm from "./components/LoginForm";
-import CitizenLoginForm from "./components/CitizenLoginForm";
+const HomePage = lazy(() => import("./components/HomePage"));
+const ComplaintForm = lazy(() => import("./components/ComplaintForm"));
+const CitizenDashboard = lazy(() => import("./components/CitizenDashboard"));
+const EmployeeDashboard = lazy(() => import("./components/EmployeeDashboard"));
+const AdminDashboard = lazy(() => import("./components/AdminDashboard"));
+const AdminSetup = lazy(() => import("./components/AdminSetup"));
+const LoginForm = lazy(() => import("./components/LoginForm"));
+const CitizenLoginForm = lazy(() => import("./components/CitizenLoginForm"));
 import ProtectedRoute from "./components/ProtectedRoute";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { I18nProvider, useI18n } from "./contexts/I18nContext";
 
 const AppContent: React.FC = () => {
   const { user, logout, userType, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState("home");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
+  const { lang, t, setLang } = useI18n();
+
   // One-time: derive initial page from URL path to support direct links like /complaint-form
   useEffect(() => {
     const path = window.location.pathname;
@@ -53,8 +56,10 @@ const AppContent: React.FC = () => {
   // Check if we need to show admin setup
   const shouldShowAdminSetup = () => {
     // Show admin setup if no users exist or if we're in development
-    return window.location.search.includes("setup=true") || 
-           window.location.pathname === "/admin-setup";
+    return (
+      window.location.search.includes("setup=true") ||
+      window.location.pathname === "/admin-setup"
+    );
   };
 
   // التوجيه التلقائي بعد تسجيل الدخول مع احترام الصفحات اليدوية (مثل صفحة تقديم الشكوى)
@@ -171,7 +176,7 @@ const AppContent: React.FC = () => {
                 }`}
               >
                 <Home className="w-4 h-4 ml-1" />
-                الرئيسية
+                {t("home")}
               </button>
 
               {(user || userType === "complainant") && (
@@ -184,7 +189,7 @@ const AppContent: React.FC = () => {
                   }`}
                 >
                   <User className="w-4 h-4 ml-1" />
-                  لوحة التحكم
+                  {t("dashboard")}
                 </button>
               )}
 
@@ -199,7 +204,7 @@ const AppContent: React.FC = () => {
                     }`}
                   >
                     <LogIn className="w-4 h-4 ml-1" />
-                    موظف/أدمن
+                    {t("employeeAdmin")}
                   </button>
                   <button
                     onClick={() => handleNavigation("citizen-login")}
@@ -210,7 +215,7 @@ const AppContent: React.FC = () => {
                     }`}
                   >
                     <User className="w-4 h-4 ml-1" />
-                    مواطن
+                    {t("citizen")}
                   </button>
                 </div>
               )}
@@ -225,11 +230,21 @@ const AppContent: React.FC = () => {
                     className="flex items-center px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md transition-colors"
                   >
                     <LogOut className="w-4 h-4 ml-1" />
-                    <span className="hidden sm:inline">تسجيل الخروج</span>
+                    <span className="hidden sm:inline">{t("logout")}</span>
                   </button>
                 </div>
               )}
             </nav>
+
+            {/* Language toggle */}
+            <div className="hidden md:flex items-center">
+              <button
+                onClick={() => setLang(lang === "ar" ? "en" : "ar")}
+                className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                {lang === "ar" ? "EN" : "ع"}
+              </button>
+            </div>
 
             {/* Mobile menu button */}
             <div className="md:hidden">
@@ -261,7 +276,7 @@ const AppContent: React.FC = () => {
               >
                 <div className="flex items-center">
                   <Home className="w-5 h-5 ml-2" />
-                  الرئيسية
+                  {t("home")}
                 </div>
               </button>
 
@@ -276,7 +291,7 @@ const AppContent: React.FC = () => {
                 >
                   <div className="flex items-center">
                     <User className="w-5 h-5 ml-2" />
-                    لوحة التحكم
+                    {t("dashboard")}
                   </div>
                 </button>
               )}
@@ -293,7 +308,7 @@ const AppContent: React.FC = () => {
                   >
                     <div className="flex items-center">
                       <LogIn className="w-5 h-5 ml-2" />
-                      موظف/أدمن
+                      {t("employeeAdmin")}
                     </div>
                   </button>
                   <button
@@ -306,7 +321,7 @@ const AppContent: React.FC = () => {
                   >
                     <div className="flex items-center">
                       <User className="w-5 h-5 ml-2" />
-                      مواطن
+                      {t("citizen")}
                     </div>
                   </button>
                 </>
@@ -323,7 +338,7 @@ const AppContent: React.FC = () => {
                   >
                     <div className="flex items-center">
                       <LogOut className="w-5 h-5 ml-2" />
-                      تسجيل الخروج
+                      {t("logout")}
                     </div>
                   </button>
                 </div>
@@ -334,7 +349,19 @@ const AppContent: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1">{renderCurrentPage()}</main>
+      <main className="flex-1">
+        <ErrorBoundary>
+          <Suspense
+            fallback={
+              <div className="min-h-[40vh] flex items-center justify-center">
+                <div className="text-gray-600">جاري التحميل...</div>
+              </div>
+            }
+          >
+            {renderCurrentPage()}
+          </Suspense>
+        </ErrorBoundary>
+      </main>
 
       {/* Footer */}
       <footer className="bg-gray-800 text-white py-8 mt-auto">
@@ -343,7 +370,9 @@ const AppContent: React.FC = () => {
             <p className="text-gray-300 text-sm sm:text-base">
               © 2025 مركز مدينة أبوتيج - مجلس مدينة أبوتيج
             </p>
-            <p className="text-gray-400 text-xs sm:text-sm mt-2">جميع الحقوق محفوظة</p>
+            <p className="text-gray-400 text-xs sm:text-sm mt-2">
+              جميع الحقوق محفوظة
+            </p>
           </div>
         </div>
       </footer>
@@ -353,9 +382,11 @@ const AppContent: React.FC = () => {
 
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <I18nProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </I18nProvider>
   );
 }
 

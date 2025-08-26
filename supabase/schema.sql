@@ -34,6 +34,7 @@ create table if not exists public.complaints (
   location jsonb,
   status complaint_status not null default 'NEW',
   national_id varchar(14) not null,
+  tracking_code varchar(20) unique,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   resolved_at timestamptz
@@ -57,6 +58,16 @@ create table if not exists public.complaint_history (
   created_at timestamptz not null default now()
 );
 
+-- Admin/Employee audit logs (generic actions not tied to a single complaint)
+create table if not exists public.admin_audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  actor_user_id uuid references public.users(id) on delete set null,
+  action text not null,
+  target text,
+  details jsonb,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.settings (
   id uuid primary key default gen_random_uuid(),
   key text not null unique,
@@ -75,6 +86,7 @@ alter table public.complaint_files enable row level security;
 alter table public.complaint_history enable row level security;
 alter table public.complaint_types enable row level security;
 alter table public.settings enable row level security;
+alter table public.admin_audit_logs enable row level security;
 
 -- Drop existing policies if they exist
 drop policy if exists users_self_access on public.users;
@@ -90,6 +102,7 @@ drop policy if exists admin_full_access_complaint_types on public.complaint_type
 drop policy if exists admin_full_access_complaint_files on public.complaint_files;
 drop policy if exists admin_full_access_complaint_history on public.complaint_history;
 drop policy if exists admin_full_access_settings on public.settings;
+drop policy if exists admin_full_access_admin_audit_logs on public.admin_audit_logs;
 drop policy if exists employee_read_complaints on public.complaints;
 drop policy if exists employee_read_complaint_types on public.complaint_types;
 drop policy if exists citizen_read_own_complaints on public.complaints;
@@ -157,6 +170,14 @@ create policy admin_full_access_settings on public.settings
     )
   );
 
+create policy admin_full_access_admin_audit_logs on public.admin_audit_logs
+  for all using (
+    exists (
+      select 1 from public.users u
+      where u.auth_user_id = auth.uid() and u.role = 'ADMIN' and u.is_active = true
+    )
+  );
+
 -- Employee policies (read access to complaints and types)
 create policy employee_read_complaints on public.complaints
   for select using (
@@ -212,5 +233,49 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+
+-- Function to generate human-friendly unique tracking code for complaints
+create or replace function public.generate_tracking_code()
+returns text as $$
+declare
+  code text;
+begin
+  -- Format: ATG-YYYYMMDD-XXXX (random base36)
+  code := 'ATG-' || to_char(now(), 'YYYYMMDD') || '-' || substring(replace(encode(gen_random_bytes(6), 'base64'), '/', '0') from 1 for 6);
+  code := upper(replace(replace(code, '+', '1'), '=', '2'));
+  return code;
+end;
+$$ language plpgsql volatile;
+
+-- Trigger to auto-fill tracking_code and updated_at
+create or replace function public.handle_complaint_insert()
+returns trigger as $$
+begin
+  if new.tracking_code is null then
+    new.tracking_code := public.generate_tracking_code();
+  end if;
+  new.updated_at := now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists on_complaint_insert on public.complaints;
+create trigger on_complaint_insert
+  before insert on public.complaints
+  for each row execute procedure public.handle_complaint_insert();
+
+create or replace function public.handle_complaint_update_timestamp()
+returns trigger as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists on_complaint_update on public.complaints;
+create trigger on_complaint_update
+  before update on public.complaints
+  for each row execute procedure public.handle_complaint_update_timestamp();
 
 

@@ -91,7 +91,21 @@ interface ComplaintType {
 }
 
 const AdminDashboard: React.FC = () => {
-  const { user } = useAuth();
+  // Use user from context, fallback to localStorage if not set
+  const { user: contextUser } = useAuth();
+  const [user, setUser] = useState(contextUser);
+
+  useEffect(() => {
+    if (!contextUser) {
+      // Try to get user from localStorage
+      const storedUser = localStorage.getItem("user");
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+      }
+    } else {
+      setUser(contextUser);
+    }
+  }, [contextUser]);
   const [activeTab, setActiveTab] = useState<
     "overview" | "users" | "complaints" | "types" | "settings"
   >("overview");
@@ -246,25 +260,7 @@ const AdminDashboard: React.FC = () => {
 
   const handleCreateUser = async () => {
     try {
-      // Create auth user using regular signup (admin will need to confirm email)
-      const { data: authRes, error: authError } = await supabase.auth.signUp({
-        email: userForm.email,
-        password: userForm.password,
-        options: {
-          data: {
-            full_name: userForm.fullName,
-            role: userForm.role,
-          },
-        },
-      });
-
-      if (authError || !authRes.user) {
-        console.error("Auth creation error:", authError);
-        alert("فشل إنشاء حساب المستخدم");
-        return;
-      }
-
-      // Create profile row
+      // Create user directly in users table
       const { error: profileError } = await supabase.from("users").insert({
         email: userForm.email,
         full_name: userForm.fullName,
@@ -272,7 +268,7 @@ const AdminDashboard: React.FC = () => {
         national_id: userForm.nationalId || null,
         role: userForm.role,
         is_active: true,
-        auth_user_id: authRes.user.id,
+        password: userForm.password,
       });
 
       if (profileError) {
@@ -493,10 +489,14 @@ const AdminDashboard: React.FC = () => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <Shield className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">غير مصرح</h1>
-          <p className="text-gray-600">
-            ليس لديك صلاحية للوصول إلى لوحة تحكم المدير
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">غير مصرح بالوصول</h1>
+          <p className="text-gray-600">يجب تسجيل الدخول للوصول لهذه الصفحة</p>
+          <button
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg"
+            onClick={() => (window.location.href = "/")}
+          >
+            العودة للرئيسية
+          </button>
         </div>
       </div>
     );

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { FileText, Upload, X, AlertCircle, CheckCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../utils/supabaseClient.ts";
+import ReCaptcha from "./ReCaptcha";
+import { isRateLimited, recordAttempt } from "../utils/rateLimiter.ts";
 
 interface ComplaintFormProps {
   onNavigate: (page: string) => void;
@@ -28,6 +30,13 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
   });
   const [nationalIdError, setNationalIdError] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+  const ALLOWED_MIME_TYPES = [
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "application/pdf",
+  ];
   const [complaintTypes, setComplaintTypes] = useState<ComplaintType[]>([]);
 
   // Fallback types in case API fails
@@ -101,7 +110,11 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
   ];
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [trackingCodeState, setTrackingCodeState] = useState<string | null>(
+    null
+  );
   const [error, setError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   useEffect(() => {
     fetchComplaintTypes();
@@ -159,6 +172,14 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
       setError("يمكن رفع 5 ملفات كحد أقصى");
       return;
     }
+    const invalid = selectedFiles.find(
+      (f) =>
+        !ALLOWED_MIME_TYPES.includes(f.type) || f.size > MAX_FILE_SIZE_BYTES
+    );
+    if (invalid) {
+      setError("يسمح فقط بملفات PNG, JPG, PDF حتى 5MB");
+      return;
+    }
     setFiles((prev) => [...prev, ...selectedFiles]);
     setError("");
   };
@@ -173,6 +194,22 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
     setError("");
 
     try {
+      const rule = {
+        key: "complaint_submit",
+        windowMs: 10 * 60 * 1000,
+        max: 5,
+      };
+      const limit = isRateLimited(rule);
+      if (limit.limited) {
+        setError("لقد تجاوزت الحد المسموح للمحاولات. حاول لاحقاً.");
+        setLoading(false);
+        return;
+      }
+      if (!captchaToken) {
+        setError("يرجى تأكيد اختبار CAPTCHA قبل الإرسال");
+        setLoading(false);
+        return;
+      }
       if (!/^\d{14}$/.test(formData.nationalId)) {
         setError("الرقم القومي غير صالح. يجب أن يكون 14 رقمًا.");
         setLoading(false);
@@ -226,7 +263,7 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
           status: "NEW",
           national_id: formData.nationalId,
         })
-        .select("id")
+        .select("id, tracking_code")
         .single();
 
       if (complaintError) {
@@ -235,6 +272,8 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
       }
 
       const complaintId = complaintData.id;
+      const trackingCode = (complaintData as any).tracking_code as string;
+      setTrackingCodeState(trackingCode || null);
 
       // Upload files to Supabase Storage (optional)
       if (files.length > 0) {
@@ -266,6 +305,7 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
       loginComplainant(complainantData, "");
 
       setSuccess(true);
+      recordAttempt(rule);
       setTimeout(() => {
         setSuccess(false);
         setFormData({
@@ -301,9 +341,29 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
               شكراً لك على تقديم الشكوى. سيتم مراجعتها والرد عليك في أقرب وقت
               ممكن.
             </p>
+            {trackingCodeState && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-right">
+                <div className="text-sm text-gray-700 mb-1">
+                  رقم تتبع الشكوى
+                </div>
+                <div className="flex items-center justify-between">
+                  <code className="font-mono text-blue-700 text-lg break-all">
+                    {trackingCodeState}
+                  </code>
+                  <button
+                    onClick={() =>
+                      navigator.clipboard.writeText(trackingCodeState)
+                    }
+                    className="ml-3 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    نسخ
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
               <button
-                onClick={() => onNavigate("citizen")}
+                onClick={() => onNavigate("citizen-dashboard")}
                 className="bg-blue-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm sm:text-base"
               >
                 الذهاب للوحة التحكم
@@ -548,6 +608,12 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
 
             {/* Submit Button */}
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-4 sm:pt-6">
+              <div className="flex items-center">
+                <ReCaptcha
+                  siteKey={import.meta.env.VITE_RECAPTCHA_SITE_KEY || ""}
+                  onToken={(t) => setCaptchaToken(t)}
+                />
+              </div>
               <button
                 type="submit"
                 disabled={loading}

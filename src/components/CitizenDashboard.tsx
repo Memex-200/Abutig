@@ -57,7 +57,6 @@ const CitizenDashboard: React.FC = () => {
           "id,title,description,status,created_at,resolved_at, location, type:complaint_types(name,icon)"
         )
         .eq("national_id", complainant.nationalId || "")
-        .eq("phone", complainant.phone)
         .order("created_at", { ascending: false });
       if (!error && data) {
         const mapped = (data as any[]).map((c) => ({

@@ -8,7 +8,7 @@ interface LoginFormProps {
 }
 
 const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
-  const { login, loginComplainant } = useAuth();
+  const { login } = useAuth();
   const [activeTab, setActiveTab] = useState<"citizen" | "staff">("staff");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -25,116 +25,158 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
     phone: "",
     nationalId: "",
   });
-
   const handleStaffLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: staffForm.email,
-        password: staffForm.password,
-      });
+      // Just check if user exists in "users" table
+      const { data: userData, error: userError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("email", staffForm.email)
+        .eq("password", staffForm.password) // plaintext check (not recommended in production)
+        .single();
 
-      if (error) {
-        console.error("Supabase auth error:", error);
-        // Handle specific error cases
-        if (error.status === 400) {
-          setError("الحساب غير موجود أو كلمة المرور غير صحيحة");
-        } else if (error.message.includes("Invalid login credentials")) {
-          setError("الحساب غير موجود أو كلمة المرور غير صحيحة");
-        } else {
-          setError(error.message || "خطأ في تسجيل الدخول");
-        }
-      } else if (data.session) {
-        const authUserId = data.session.user.id;
-        const { data: profiles, error: profileError } = await supabase
-          .from("users")
-          .select("id,email,full_name,role,is_active")
-          .eq("auth_user_id", authUserId)
-          .limit(1);
-
-        if (profileError) {
-          console.error("Profile fetch error:", profileError);
-          setError("خطأ في جلب بيانات المستخدم");
-        } else if (!profiles || profiles.length === 0) {
-          setError("لا يوجد ملف مستخدم مرتبط بهذا الحساب");
-        } else {
-          const profile = profiles[0] as any;
-
-          // Check if user is active
-          if (!profile.is_active) {
-            setError("الحساب معطل، يرجى التواصل مع الإدارة");
-            return;
-          }
-
-          const mappedUser = {
-            id: profile.id,
-            email: profile.email,
-            fullName: profile.full_name,
-            role: profile.role,
-          } as any;
-
-          login(mappedUser, "");
-
-          if (mappedUser.role === "ADMIN") {
-            onNavigate("admin-dashboard");
-          } else {
-            onNavigate("employee-dashboard");
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Login error:", error);
-      setError("خطأ في الاتصال بالخادم");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCitizenVerification = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-
-    try {
-      // Check if citizen exists in the database
-      const { data: existingComplaints, error } = await supabase
-        .from("complaints")
-        .select("id, full_name, phone")
-        .eq("national_id", citizenForm.nationalId)
-        .eq("phone", citizenForm.phone)
-        .limit(1);
-
-      if (error) {
-        console.error("Database error:", error);
-        setError("خطأ في الاتصال بقاعدة البيانات");
+      if (userError || !userData) {
+        setError("لم يتم العثور على المستخدم أو كلمة المرور غير صحيحة");
+        setLoading(false);
         return;
       }
 
-      if (existingComplaints && existingComplaints.length > 0) {
-        const complainant = existingComplaints[0];
-        const complainantData = {
-          id: complainant.id,
-          fullName: complainant.full_name,
-          phone: complainant.phone,
-          nationalId: citizenForm.nationalId,
-        };
-        loginComplainant(complainantData, "");
-        onNavigate("citizen-dashboard");
+      // Set user context and localStorage
+      const mappedUser = {
+        id: userData.id,
+        email: userData.email,
+        fullName: userData.full_name,
+        role: userData.role,
+      };
+      login(mappedUser, "");
+
+      // Navigate based on role
+      if (userData.role === "ADMIN") {
+        onNavigate("admin-dashboard");
       } else {
-        setError(
-          "لم يتم العثور على شكاوى بهذه البيانات. يرجى التأكد من صحة البيانات أو تقديم شكوى جديدة."
-        );
+        onNavigate("employee-dashboard");
       }
-    } catch (error) {
+    } catch (err) {
+      console.error("Login error:", err);
       setError("خطأ في الاتصال بالخادم");
-      console.error("Verification error:", error);
     } finally {
       setLoading(false);
     }
   };
+
+  // const handleStaffLogin = async (e: React.FormEvent) => {
+  //   e.preventDefault();
+  //   setLoading(true);
+  //   setError("");
+
+  //   try {
+  //     const { data, error } = await supabase.auth.signInWithPassword({
+  //       email: staffForm.email,
+  //       password: staffForm.password,
+  //     });
+
+  //     if (error) {
+  //       console.error("Supabase auth error:", error);
+  //       // Handle specific error cases
+  //       if (error.status === 400) {
+  //         setError("الحساب غير موجود أو كلمة المرور غير صحيحة");
+  //       } else if (error.message.includes("Invalid login credentials")) {
+  //         setError("الحساب غير موجود أو كلمة المرور غير صحيحة");
+  //       } else {
+  //         setError(error.message || "خطأ في تسجيل الدخول");
+  //       }
+  //     } else if (data.session) {
+  //       const authUserId = data.session.user.id;
+  //       const { data: profiles, error: profileError } = await supabase
+  //         .from("users")
+  //         .select("id,email,full_name,role,is_active")
+  //         .eq("auth_user_id", authUserId)
+  //         .limit(1);
+
+  //       if (profileError) {
+  //         console.error("Profile fetch error:", profileError);
+  //         setError("خطأ في جلب بيانات المستخدم");
+  //       } else if (!profiles || profiles.length === 0) {
+  //         setError("لا يوجد ملف مستخدم مرتبط بهذا الحساب");
+  //       } else {
+  //         const profile = profiles[0] as any;
+
+  //         // Check if user is active
+  //         if (!profile.is_active) {
+  //           setError("الحساب معطل، يرجى التواصل مع الإدارة");
+  //           return;
+  //         }
+
+  //         const mappedUser = {
+  //           id: profile.id,
+  //           email: profile.email,
+  //           fullName: profile.full_name,
+  //           role: profile.role,
+  //         } as any;
+
+  //         login(mappedUser, "");
+
+  //         if (mappedUser.role === "ADMIN") {
+  //           onNavigate("admin-dashboard");
+  //         } else {
+  //           onNavigate("employee-dashboard");
+  //         }
+  //       }
+  //     }
+  //   } catch (error) {
+  //     console.error("Login error:", error);
+  //     setError("خطأ في الاتصال بالخادم");
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
+  // const handleCitizenVerification = async (e: React.FormEvent) => {
+  //   e.preventDefault();
+  //   setLoading(true);
+  //   setError("");
+
+  //   try {
+  //     // Check if citizen exists in the database
+  //     const { data: existingComplaints, error } = await supabase
+  //       .from("complaints")
+  //       .select("id, full_name, phone")
+  //       .eq("national_id", citizenForm.nationalId)
+  //       .eq("phone", citizenForm.phone)
+  //       .limit(1);
+
+  //     if (error) {
+  //       console.error("Database error:", error);
+  //       setError("خطأ في الاتصال بقاعدة البيانات");
+  //       return;
+  //     }
+
+  //     if (existingComplaints && existingComplaints.length > 0) {
+  //       const complainant = existingComplaints[0];
+  //       const complainantData = {
+  //         id: complainant.id,
+  //         fullName: complainant.full_name,
+  //         phone: complainant.phone,
+  //         nationalId: citizenForm.nationalId,
+  //       };
+  //       // loginComplainant(complainantData, "");
+  //       onNavigate("citizen-dashboard");
+  //     } else {
+  //       setError(
+  //         "لم يتم العثور على شكاوى بهذه البيانات. يرجى التأكد من صحة البيانات أو تقديم شكوى جديدة."
+  //       );
+  //     }
+  //   } catch (error) {
+  //     setError("خطأ في الاتصال بالخادم");
+  //     console.error("Verification error:", error);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
 
   return (
     <div className="min-h-screen bg-gray-50 py-12">

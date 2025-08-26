@@ -171,8 +171,8 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                 </button>
               </div>
             </div>
-            
-            {/* Admin Setup Link - Only show in development */}
+
+            {/* Admin Setup Link - Only show in development
             {process.env.NODE_ENV === 'development' && (
               <div className="mt-8 text-center">
                 <button
@@ -182,7 +182,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                   إعداد النظام (للمطورين فقط)
                 </button>
               </div>
-            )}
+            )} */}
           </div>
         </div>
       </section>

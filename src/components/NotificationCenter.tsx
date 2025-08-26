@@ -42,10 +42,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
     try {
       // Example: read from a notifications table if exists; otherwise, synthesize from complaint_logs
       const { data, error } = await supabase
-        .from("complaint_logs")
-        .select(
-          "id,action,old_status,new_status,notes,created_at, complaint:complaints(title)"
-        )
+        .from("complaint_history")
+        .select("id, action, details, created_at, complaint:complaints(title)")
         .order("created_at", { ascending: false })
         .limit(50);
       if (!error && data) {
@@ -55,9 +53,9 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
           title: mapTitle(log.action),
           message: mapMessage(
             log.action,
-            log.old_status,
-            log.new_status,
-            log.notes
+            log.details?.old_status,
+            log.details?.new_status,
+            log.details?.notes
           ),
           complaintId: "",
           complaintTitle: log.complaint?.title || "",

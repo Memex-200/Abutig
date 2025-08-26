@@ -72,6 +72,20 @@ const EmployeeDashboard: React.FC = () => {
     if (user) {
       fetchComplaints();
     }
+    // Realtime updates for assigned complaints
+    const channel = supabase
+      .channel("employee-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "complaints" },
+        () => fetchComplaints()
+      )
+      .subscribe();
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+    };
   }, [user, activeTab]);
 
   const fetchComplaints = async () => {
@@ -81,19 +95,17 @@ const EmployeeDashboard: React.FC = () => {
       let query = supabase
         .from("complaints")
         .select(
-          "id,title,description,status,priority,location,created_at, resolved_at, citizen:users!complaints_citizen_id_fkey(full_name,phone), type:complaint_types(name,icon)"
+          "id,title,description,status,location,created_at, resolved_at, assigned_user_id, citizen:users!complaints_citizen_id_fkey(full_name,phone), type:complaint_types(name,icon)"
         )
         .order("created_at", { ascending: false });
 
       // Employees see assigned complaints; for "new" tab, show UNASSIGNED/UNRESOLVED
       if (activeTab === "new") {
-        query = query.eq("status", "UNRESOLVED");
+        query = query.eq("status", "NEW");
       } else {
-        query = query.in("status", [
-          "UNRESOLVED",
-          "IN_PROGRESS",
-          "BEING_RESOLVED",
-        ]);
+        query = query
+          .in("status", ["NEW", "IN_PROGRESS", "OVERDUE"])
+          .eq("assigned_user_id", user.id);
       }
 
       const { data, error } = await query;
@@ -110,7 +122,7 @@ const EmployeeDashboard: React.FC = () => {
             fullName: c.citizen?.full_name,
             phone: c.citizen?.phone,
           },
-          priority: c.priority,
+          assignedTo: c.assigned_user_id,
           location: c.location,
         }));
         setComplaints(mapped as any);

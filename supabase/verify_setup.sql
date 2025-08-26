@@ -28,7 +28,7 @@ ORDER BY tablename, policyname;
 SELECT table_name, column_name, data_type, is_nullable 
 FROM information_schema.columns 
 WHERE table_schema = 'public' 
-AND table_name IN ('users', 'complaints', 'complaint_types', 'complaint_files', 'complaint_history')
+AND table_name IN ('users', 'complaints', 'complaint_types', 'complaint_files', 'complaint_history', 'admin_audit_logs')
 ORDER BY table_name, ordinal_position;
 
 -- Summary
@@ -37,7 +37,8 @@ SELECT
   (SELECT COUNT(*) FROM public.complaint_types WHERE is_active = true) as complaint_types_count,
   (SELECT COUNT(*) FROM public.users WHERE role = 'ADMIN' AND is_active = true) as admin_users_count,
   (SELECT COUNT(*) FROM public.users WHERE role = 'EMPLOYEE' AND is_active = true) as employee_users_count,
-  (SELECT COUNT(*) FROM public.users WHERE role = 'CITIZEN' AND is_active = true) as citizen_users_count;
+  (SELECT COUNT(*) FROM public.users WHERE role = 'CITIZEN' AND is_active = true) as citizen_users_count,
+  (SELECT COUNT(*) FROM public.admin_audit_logs) as audit_logs_count;
 
 -- Expected results:
 -- complaint_types_count should be 11
