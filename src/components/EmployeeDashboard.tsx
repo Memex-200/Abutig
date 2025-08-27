@@ -90,7 +90,17 @@ const EmployeeDashboard: React.FC = () => {
 
   const fetchComplaints = async () => {
     try {
-      if (!user) return;
+      if (!user) {
+        console.log("No user data, cannot fetch complaints");
+        return;
+      }
+
+      console.log(
+        "Employee fetching complaints for user ID:",
+        user.id,
+        "Role:",
+        user.role
+      );
 
       let query = supabase
         .from("complaints")

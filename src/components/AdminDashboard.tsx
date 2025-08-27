@@ -31,7 +31,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { supabase } from "../utils/supabaseClient";
+import { supabase } from "../utils/supabaseClient.ts";
 import ComplaintTypeManager from "./ComplaintTypeManager";
 
 interface Complaint {
@@ -51,6 +51,7 @@ interface Complaint {
     fullName: string;
     phone: string;
     email: string;
+    role: string;
   };
   assignedTo?: {
     id: string;
@@ -145,6 +146,7 @@ const AdminDashboard: React.FC = () => {
       console.error("Access denied: User is not an admin");
       return;
     }
+    console.log("Admin access verified, fetching data for tab:", activeTab);
     fetchData();
   }, [user, activeTab]);
 
@@ -172,14 +174,21 @@ const AdminDashboard: React.FC = () => {
   };
 
   const fetchComplaints = async () => {
+    // Double-check admin access
+    if (!user || user.role !== "ADMIN") {
+      console.error("Access denied: fetchComplaints called by non-admin user");
+      return;
+    }
+
     try {
+      console.log("Admin fetching all complaints...");
       let query = supabase
         .from("complaints")
         .select(
           `
-          id, title, description, status, created_at, resolved_at, priority, location,
-          type:complaint_types(id, name, icon),
-          citizen:users!complaints_citizen_id_fkey(id, full_name, phone, email)
+          id, title, description, status, created_at, resolved_at, location,
+          type:complaint_types(id, name, icon, description),
+          citizen:users(id, full_name, phone, email, role, national_id)
         `
         )
         .order("created_at", { ascending: false });
@@ -199,30 +208,61 @@ const AdminDashboard: React.FC = () => {
 
       if (error) {
         console.error("Error fetching complaints:", error);
+        console.error("Error details:", {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
         return;
       }
 
-      // Transform data
+      console.log("Raw complaints data from database:", data);
+
+      // Transform data and ensure proper citizen association
       const transformedData =
-        data?.map((complaint: any) => ({
-          id: complaint.id,
-          title: complaint.title,
-          description: complaint.description,
-          status: complaint.status,
-          createdAt: complaint.created_at,
-          resolvedAt: complaint.resolved_at,
-          priority: complaint.priority,
-          location: complaint.location,
-          type: complaint.type,
-          complainant: complaint.citizen
+        data?.map((complaint: any) => {
+          console.log(
+            "Processing complaint:",
+            complaint.id,
+            "with citizen:",
+            complaint.citizen
+          );
+
+          // Ensure citizen data is properly structured
+          const citizenData = complaint.citizen
             ? {
                 id: complaint.citizen.id,
-                fullName: complaint.citizen.full_name,
-                phone: complaint.citizen.phone,
-                email: complaint.citizen.email,
+                fullName: complaint.citizen.full_name || "غير محدد",
+                phone: complaint.citizen.phone || "غير محدد",
+                email: complaint.citizen.email || "",
+                role: complaint.citizen.role || "CITIZEN",
+                nationalId: complaint.citizen.national_id || "",
               }
-            : null,
-        })) || [];
+            : {
+                id: "unknown",
+                fullName: "غير محدد",
+                phone: "غير محدد",
+                email: "",
+                role: "CITIZEN",
+                nationalId: "",
+              };
+
+          return {
+            id: complaint.id,
+            title: complaint.title,
+            description: complaint.description,
+            status: complaint.status,
+            createdAt: complaint.created_at,
+            resolvedAt: complaint.resolved_at,
+            priority: "MEDIUM", // Default priority since column doesn't exist
+            location: complaint.location,
+            type: complaint.type,
+            complainant: citizenData,
+          };
+        }) || [];
+
+      console.log("Transformed complaints data:", transformedData);
 
       setComplaints(transformedData);
     } catch (error) {
@@ -232,15 +272,25 @@ const AdminDashboard: React.FC = () => {
 
   const fetchUsers = async () => {
     try {
+      // Only fetch employees and admins, not citizens
       const { data, error } = await supabase
         .from("users")
         .select("id, full_name, email, role, is_active, created_at")
+        .in("role", ["EMPLOYEE", "ADMIN"]) // Only show employees and admins
         .order("created_at", { ascending: false });
 
       if (error) {
         console.error("Error fetching users:", error);
+        console.error("Error details:", {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
         return;
       }
+
+      console.log("Raw users data from database:", data);
 
       const transformedData =
         data?.map((user: any) => ({
@@ -353,6 +403,7 @@ const AdminDashboard: React.FC = () => {
     if (!selectedComplaint || !statusUpdateForm.status) return;
 
     try {
+      // Update complaint status
       const { error } = await supabase
         .from("complaints")
         .update({
@@ -368,6 +419,28 @@ const AdminDashboard: React.FC = () => {
         console.error("Error updating complaint status:", error);
         alert("فشل تحديث حالة الشكوى");
         return;
+      }
+
+      // Send notification to citizen
+      if (selectedComplaint.complainant.id) {
+        const notificationData = {
+          user_id: selectedComplaint.complainant.id,
+          title: "تحديث حالة الشكوى",
+          message: `تم تحديث حالة شكواك إلى: ${getStatusLabel(statusUpdateForm.status)}${statusUpdateForm.notes ? ` - ${statusUpdateForm.notes}` : ''}`,
+          type: "COMPLAINT_UPDATE",
+          related_id: selectedComplaint.id,
+          is_read: false,
+          created_at: new Date().toISOString()
+        };
+
+        const { error: notificationError } = await supabase
+          .from("notifications")
+          .insert([notificationData]);
+
+        if (notificationError) {
+          console.error("Error creating notification:", notificationError);
+          // Don't fail the whole operation if notification fails
+        }
       }
 
       alert("تم تحديث حالة الشكوى بنجاح");
@@ -398,8 +471,16 @@ const AdminDashboard: React.FC = () => {
 
       if (error) {
         console.error("Error fetching complaint types:", error);
+        console.error("Error details:", {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
         return;
       }
+
+      console.log("Raw complaint types data from database:", data);
 
       const transformedData =
         data?.map((type: any) => ({
@@ -427,12 +508,79 @@ const AdminDashboard: React.FC = () => {
 
   const exportComplaints = async (format: "excel" | "csv") => {
     try {
-      // Export functionality - for now, we'll show a message
-      alert(
-        "ميزة التصدير غير متاحة في النسخة الحالية. يمكنك استخدام ميزة النسخ من الجدول."
-      );
+      if (complaints.length === 0) {
+        alert("لا توجد شكاوى للتصدير");
+        return;
+      }
+
+      // Prepare data for export
+      const exportData = complaints.map((complaint) => ({
+        "رقم الشكوى": complaint.id.slice(-8),
+        "اسم المواطن": complaint.complainant.fullName,
+        "رقم الهاتف": complaint.complainant.phone,
+        "البريد الإلكتروني": complaint.complainant.email,
+        "الرقم القومي": complaint.complainant.nationalId,
+        "نوع الشكوى": complaint.type.name,
+        "عنوان الشكوى": complaint.title,
+        "وصف الشكوى": complaint.description,
+        العنوان: complaint.location,
+        الحالة: getStatusLabel(complaint.status),
+        "تاريخ الإنشاء": new Date(complaint.createdAt).toLocaleDateString(
+          "ar-EG-u-ca-gregory"
+        ),
+        "تاريخ الحل": complaint.resolvedAt
+          ? new Date(complaint.resolvedAt).toLocaleDateString(
+              "ar-EG-u-ca-gregory"
+            )
+          : "",
+        الأولوية:
+          complaint.priority === "HIGH"
+            ? "عالية"
+            : complaint.priority === "MEDIUM"
+            ? "متوسطة"
+            : "منخفضة",
+      }));
+
+      if (format === "excel") {
+        // Create Excel file using SheetJS
+        const XLSX = await import("xlsx");
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "الشكاوى");
+
+        // Generate filename with current date
+        const date = new Date().toISOString().split("T")[0];
+        const filename = `شكاوى_${date}.xlsx`;
+
+        XLSX.writeFile(wb, filename);
+        alert("تم تصدير الشكاوى بنجاح!");
+      } else {
+        // Create CSV file
+        const headers = Object.keys(exportData[0]).join(",");
+        const rows = exportData.map((row) =>
+          Object.values(row)
+            .map((value) => `"${value}"`)
+            .join(",")
+        );
+        const csv = [headers, ...rows].join("\n");
+
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute(
+          "download",
+          `شكاوى_${new Date().toISOString().split("T")[0]}.csv`
+        );
+        link.style.visibility = "hidden";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        alert("تم تصدير الشكاوى بنجاح!");
+      }
     } catch (error) {
       console.error("Error exporting complaints:", error);
+      alert("حدث خطأ أثناء تصدير الشكاوى");
     }
   };
 
@@ -489,7 +637,9 @@ const AdminDashboard: React.FC = () => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <Shield className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">غير مصرح بالوصول</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            غير مصرح بالوصول
+          </h1>
           <p className="text-gray-600">يجب تسجيل الدخول للوصول لهذه الصفحة</p>
           <button
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg"
@@ -799,6 +949,9 @@ const AdminDashboard: React.FC = () => {
                             المواطن
                           </th>
                           <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            الرقم القومي
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                             النوع
                           </th>
                           <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -816,56 +969,83 @@ const AdminDashboard: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {complaints.map((complaint) => (
-                          <tr key={complaint.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              #{complaint.id.slice(-8)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm font-medium text-gray-900">
-                                {complaint.complainant.fullName}
+                        {complaints.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="px-6 py-12 text-center">
+                              <div className="text-gray-500">
+                                <div className="text-lg font-medium mb-2">
+                                  لا توجد شكاوى
+                                </div>
+                                <div className="text-sm">
+                                  لم يتم العثور على أي شكاوى في النظام
+                                </div>
+                                <div className="text-xs mt-2 text-gray-400">
+                                  تحقق من كونسول المتصفح (F12) لمعرفة المزيد من
+                                  التفاصيل
+                                </div>
                               </div>
-                              <div className="text-sm text-gray-500">
-                                {complaint.complainant.phone}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="flex items-center">
-                                {getTypeIcon(complaint.type.icon)}
-                                <span className="text-sm text-gray-900 mr-2">
-                                  {complaint.type.name}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {complaint.location}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span
-                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
-                                  complaint.status
-                                )}`}
-                              >
-                                {getStatusLabel(complaint.status)}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {new Date(complaint.createdAt).toLocaleDateString(
-                                "ar-EG-u-ca-gregory"
-                              )}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                              <button
-                                onClick={() =>
-                                  handleViewComplaintDetails(complaint)
-                                }
-                                className="text-blue-600 hover:text-blue-900"
-                              >
-                                عرض التفاصيل
-                              </button>
                             </td>
                           </tr>
-                        ))}
+                        ) : (
+                          complaints.map((complaint) => (
+                            <tr key={complaint.id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                #{complaint.id.slice(-8)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {complaint.complainant.fullName}
+                                </div>
+                                <div className="text-sm text-gray-500">
+                                  {complaint.complainant.phone}
+                                </div>
+                                <div className="text-xs text-gray-400">
+                                  {complaint.complainant.role === "CITIZEN"
+                                    ? "مواطن"
+                                    : complaint.complainant.role}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {complaint.complainant.nationalId || "غير محدد"}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex items-center">
+                                  {getTypeIcon(complaint.type.icon)}
+                                  <span className="text-sm text-gray-900 mr-2">
+                                    {complaint.type.name}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {complaint.location}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span
+                                  className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
+                                    complaint.status
+                                  )}`}
+                                >
+                                  {getStatusLabel(complaint.status)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {new Date(
+                                  complaint.createdAt
+                                ).toLocaleDateString("ar-EG-u-ca-gregory")}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <button
+                                  onClick={() =>
+                                    handleViewComplaintDetails(complaint)
+                                  }
+                                  className="text-blue-600 hover:text-blue-900"
+                                >
+                                  عرض التفاصيل
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -983,9 +1163,7 @@ const AdminDashboard: React.FC = () => {
               </div>
             )}
 
-            {activeTab === "types" && (
-              <ComplaintTypeManager />
-            )}
+            {activeTab === "types" && <ComplaintTypeManager />}
 
             {activeTab === "settings" && (
               <div className="space-y-6">
@@ -1179,6 +1357,14 @@ const AdminDashboard: React.FC = () => {
                     </label>
                     <p className="text-sm text-gray-900">
                       {selectedComplaint.complainant.email}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      الرقم القومي
+                    </label>
+                    <p className="text-sm text-gray-900">
+                      {selectedComplaint.complainant.nationalId}
                     </p>
                   </div>
                   <div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Edit, Trash2, Save, X, AlertCircle } from "lucide-react";
-import { supabase } from "../utils/supabaseClient";
+import { supabase } from "../utils/supabaseClient.ts";
 
 interface ComplaintType {
   id: string;
@@ -16,13 +16,13 @@ const ComplaintTypeManager: React.FC = () => {
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
-  
+
   // Form states
   const [formData, setFormData] = useState({
     name: "",
     icon: "",
     description: "",
-    is_active: true
+    is_active: true,
   });
 
   useEffect(() => {
@@ -55,19 +55,25 @@ const ComplaintTypeManager: React.FC = () => {
     }
 
     try {
-      const { error } = await supabase
+      console.log("Adding new complaint type:", formData);
+      const { data, error } = await supabase
         .from("complaint_types")
-        .insert([formData]);
+        .insert([formData])
+        .select();
 
       if (error) {
+        console.error("Error adding complaint type:", error);
         setError("فشل في إضافة نوع الشكوى: " + error.message);
       } else {
+        console.log("Complaint type added successfully:", data);
         setShowAddForm(false);
         setFormData({ name: "", icon: "", description: "", is_active: true });
         fetchComplaintTypes();
         setError("");
+        alert("تم إضافة نوع الشكوى بنجاح!");
       }
     } catch (error) {
+      console.error("Exception in handleAdd:", error);
       setError("خطأ في الاتصال بالخادم");
     }
   };
@@ -101,18 +107,23 @@ const ComplaintTypeManager: React.FC = () => {
     if (!confirm("هل أنت متأكد من حذف هذا النوع؟")) return;
 
     try {
+      console.log("Deleting complaint type:", id);
       const { error } = await supabase
         .from("complaint_types")
         .delete()
         .eq("id", id);
 
       if (error) {
+        console.error("Error deleting complaint type:", error);
         setError("فشل في حذف نوع الشكوى: " + error.message);
       } else {
+        console.log("Complaint type deleted successfully");
         fetchComplaintTypes();
         setError("");
+        alert("تم حذف نوع الشكوى بنجاح!");
       }
     } catch (error) {
+      console.error("Exception in handleDelete:", error);
       setError("خطأ في الاتصال بالخادم");
     }
   };
@@ -123,7 +134,7 @@ const ComplaintTypeManager: React.FC = () => {
       name: type.name,
       icon: type.icon,
       description: type.description,
-      is_active: type.is_active
+      is_active: type.is_active,
     });
   };
 
@@ -145,7 +156,9 @@ const ComplaintTypeManager: React.FC = () => {
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">إدارة أنواع الشكاوى</h2>
+        <h2 className="text-xl font-semibold text-gray-900">
+          إدارة أنواع الشكاوى
+        </h2>
         <button
           onClick={() => setShowAddForm(true)}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
@@ -171,28 +184,36 @@ const ComplaintTypeManager: React.FC = () => {
               type="text"
               placeholder="اسم نوع الشكوى"
               value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, name: e.target.value })
+              }
               className="border border-gray-300 rounded-lg px-3 py-2"
             />
             <input
               type="text"
               placeholder="الرمز (مثل: 🏗️)"
               value={formData.icon}
-              onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, icon: e.target.value })
+              }
               className="border border-gray-300 rounded-lg px-3 py-2"
             />
             <input
               type="text"
               placeholder="الوصف"
               value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, description: e.target.value })
+              }
               className="border border-gray-300 rounded-lg px-3 py-2 md:col-span-2"
             />
             <div className="flex items-center md:col-span-2">
               <input
                 type="checkbox"
                 checked={formData.is_active}
-                onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                onChange={(e) =>
+                  setFormData({ ...formData, is_active: e.target.checked })
+                }
                 className="ml-2"
               />
               <label className="text-sm text-gray-700">نشط</label>
@@ -222,11 +243,21 @@ const ComplaintTypeManager: React.FC = () => {
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">الرمز</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">الاسم</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">الوصف</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">الحالة</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">الإجراءات</th>
+              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                الرمز
+              </th>
+              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                الاسم
+              </th>
+              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                الوصف
+              </th>
+              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                الحالة
+              </th>
+              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                الإجراءات
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -240,7 +271,9 @@ const ComplaintTypeManager: React.FC = () => {
                     <input
                       type="text"
                       value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, name: e.target.value })
+                      }
                       className="border border-gray-300 rounded px-2 py-1 w-full"
                     />
                   ) : (
@@ -252,7 +285,12 @@ const ComplaintTypeManager: React.FC = () => {
                     <input
                       type="text"
                       value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          description: e.target.value,
+                        })
+                      }
                       className="border border-gray-300 rounded px-2 py-1 w-full"
                     />
                   ) : (
@@ -264,15 +302,22 @@ const ComplaintTypeManager: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={formData.is_active}
-                      onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          is_active: e.target.checked,
+                        })
+                      }
                     />
                   ) : (
-                    <span className={`px-2 py-1 rounded-full text-xs ${
-                      type.is_active 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-red-100 text-red-800'
-                    }`}>
-                      {type.is_active ? 'نشط' : 'غير نشط'}
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs ${
+                        type.is_active
+                          ? "bg-green-100 text-green-800"
+                          : "bg-red-100 text-red-800"
+                      }`}
+                    >
+                      {type.is_active ? "نشط" : "غير نشط"}
                     </span>
                   )}
                 </td>

@@ -1,10 +1,20 @@
--- Comprehensive RLS Policies for Complaint Management System
--- This script implements proper role-based access control
+-- Apply RLS Policies for Complaint Management System
+-- Run this script in your Supabase SQL editor to apply the security policies
+
+-- Enable RLS on all tables
+alter table public.users enable row level security;
+alter table public.complaints enable row level security;
+alter table public.complaint_files enable row level security;
+alter table public.complaint_history enable row level security;
+alter table public.complaint_types enable row level security;
+alter table public.settings enable row level security;
+alter table public.admin_audit_logs enable row level security;
 
 -- Drop existing policies that might conflict
 drop policy if exists allow_user_creation on public.users;
 drop policy if exists allow_user_updates on public.users;
 drop policy if exists users_self_access on public.users;
+drop policy if exists users_self_update on public.users;
 drop policy if exists admin_full_access_users on public.users;
 drop policy if exists admin_full_access_complaints on public.complaints;
 drop policy if exists admin_full_access_complaint_types on public.complaint_types;
@@ -13,10 +23,19 @@ drop policy if exists admin_full_access_complaint_history on public.complaint_hi
 drop policy if exists admin_full_access_settings on public.settings;
 drop policy if exists admin_full_access_admin_audit_logs on public.admin_audit_logs;
 drop policy if exists employee_read_complaints on public.complaints;
+drop policy if exists employee_read_assigned_complaints on public.complaints;
+drop policy if exists employee_update_assigned_complaints on public.complaints;
 drop policy if exists employee_read_complaint_types on public.complaint_types;
 drop policy if exists citizen_read_own_complaints on public.complaints;
+drop policy if exists citizen_insert_complaints on public.complaints;
+drop policy if exists citizen_update_own_complaints on public.complaints;
 drop policy if exists public_read_complaint_types on public.complaint_types;
 drop policy if exists public_insert_complaints on public.complaints;
+drop policy if exists citizen_read_own_complaint_files on public.complaint_files;
+drop policy if exists citizen_insert_own_complaint_files on public.complaint_files;
+drop policy if exists employee_read_assigned_complaint_files on public.complaint_files;
+drop policy if exists citizen_read_own_complaint_history on public.complaint_history;
+drop policy if exists employee_read_assigned_complaint_history on public.complaint_history;
 
 -- ============================================================================
 -- USER MANAGEMENT POLICIES
@@ -34,7 +53,7 @@ create policy users_self_access on public.users
 create policy users_self_update on public.users
   for update using (auth_user_id = auth.uid());
 
--- Admin full access to users
+-- Admin full access to users (employees and admins only, not citizens)
 create policy admin_full_access_users on public.users
   for all using (
     exists (
@@ -54,9 +73,7 @@ create policy citizen_read_own_complaints on public.complaints
       select 1 from public.users u
       where u.id = complaints.citizen_id 
       and u.national_id = complaints.national_id
-      and u.phone = (
-        select phone from public.users where id = complaints.citizen_id
-      )
+      and u.role = 'CITIZEN'
     )
   );
 
@@ -71,14 +88,7 @@ create policy citizen_update_own_complaints on public.complaints
       select 1 from public.users u
       where u.id = complaints.citizen_id 
       and u.national_id = complaints.national_id
-    )
-  ) with check (
-    -- Only allow updating certain fields
-    coalesce(array_length(akeys(to_jsonb(NEW.*) - to_jsonb(OLD.*)), 1), 0) = 0
-    or (
-      -- Allow updating description and location only
-      (to_jsonb(NEW.*) - to_jsonb(OLD.*)) ? 'description'
-      or (to_jsonb(NEW.*) - to_jsonb(OLD.*)) ? 'location'
+      and u.role = 'CITIZEN'
     )
   );
 
@@ -153,6 +163,7 @@ create policy citizen_read_own_complaint_files on public.complaint_files
       join public.users u on c.citizen_id = u.id
       where c.id = complaint_files.complaint_id
       and u.national_id = c.national_id
+      and u.role = 'CITIZEN'
     )
   );
 
@@ -164,6 +175,7 @@ create policy citizen_insert_own_complaint_files on public.complaint_files
       join public.users u on c.citizen_id = u.id
       where c.id = complaint_files.complaint_id
       and u.national_id = c.national_id
+      and u.role = 'CITIZEN'
     )
   );
 
@@ -201,6 +213,7 @@ create policy citizen_read_own_complaint_history on public.complaint_history
       join public.users u on c.citizen_id = u.id
       where c.id = complaint_history.complaint_id
       and u.national_id = c.national_id
+      and u.role = 'CITIZEN'
     )
   );
 
@@ -227,7 +240,7 @@ create policy admin_full_access_complaint_history on public.complaint_history
   );
 
 -- ============================================================================
--- SETTINGS AND AUDIT LOGS POLICIES
+-- SETTINGS POLICIES
 -- ============================================================================
 
 -- Admin full access to settings
@@ -239,7 +252,11 @@ create policy admin_full_access_settings on public.settings
     )
   );
 
--- Admin full access to admin audit logs
+-- ============================================================================
+-- AUDIT LOG POLICIES
+-- ============================================================================
+
+-- Admin full access to audit logs
 create policy admin_full_access_admin_audit_logs on public.admin_audit_logs
   for all using (
     exists (
@@ -249,19 +266,11 @@ create policy admin_full_access_admin_audit_logs on public.admin_audit_logs
   );
 
 -- ============================================================================
--- VERIFICATION QUERY
+-- VERIFICATION QUERIES
 -- ============================================================================
 
--- Verify the policies are created
-select 
-  schemaname,
-  tablename,
-  policyname,
-  permissive,
-  roles,
-  cmd,
-  qual,
-  with_check
-from pg_policies 
-where schemaname = 'public'
-order by tablename, policyname;
+-- Verify policies are applied
+SELECT schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check 
+FROM pg_policies 
+WHERE schemaname = 'public' 
+ORDER BY tablename, policyname;

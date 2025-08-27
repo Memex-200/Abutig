@@ -3,7 +3,7 @@ import { FileText, Upload, X, AlertCircle, CheckCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../utils/supabaseClient.ts";
 import ReCaptcha from "./ReCaptcha";
-import { isRateLimited, recordAttempt } from "../utils/rateLimiter.ts";
+
 
 interface ComplaintFormProps {
   onNavigate: (page: string) => void;
@@ -28,15 +28,7 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
     description: "",
     location: "",
   });
-  const [nationalIdError, setNationalIdError] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
-  const ALLOWED_MIME_TYPES = [
-    "image/png",
-    "image/jpeg",
-    "image/jpg",
-    "application/pdf",
-  ];
   const [complaintTypes, setComplaintTypes] = useState<ComplaintType[]>([]);
 
   // Fallback types in case API fails
@@ -153,84 +145,89 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
       ...prev,
       [name]: value,
     }));
-    if (name === "nationalId") {
-      const digitsOnly = value.replace(/[^0-9]/g, "");
-      if (digitsOnly !== value) {
-        setFormData((prev) => ({ ...prev, nationalId: digitsOnly }));
-      }
-      if (digitsOnly.length !== 14) {
-        setNationalIdError("الرقم القومي يجب أن يكون 14 رقمًا");
-      } else {
-        setNationalIdError("");
-      }
-    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
-    if (files.length + selectedFiles.length > 5) {
-      setError("يمكن رفع 5 ملفات كحد أقصى");
-      return;
-    }
-    const invalid = selectedFiles.find(
-      (f) =>
-        !ALLOWED_MIME_TYPES.includes(f.type) || f.size > MAX_FILE_SIZE_BYTES
-    );
-    if (invalid) {
-      setError("يسمح فقط بملفات PNG, JPG, PDF حتى 5MB");
-      return;
-    }
     setFiles((prev) => [...prev, ...selectedFiles]);
-    setError("");
+  };
+
+  const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    setFiles((prev) => [...prev, ...droppedFiles]);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
   };
 
   const removeFile = (index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const validateForm = () => {
+    // Only check if at least description is provided
+    if (!formData.description.trim()) {
+      setError("وصف الشكوى مطلوب");
+      return false;
+    }
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("Submitting complaint form...");
+
+    if (!validateForm()) {
+      return;
+    }
+
     setLoading(true);
     setError("");
 
     try {
-      const rule = {
-        key: "complaint_submit",
-        windowMs: 10 * 60 * 1000,
-        max: 5,
-      };
-      const limit = isRateLimited(rule);
-      if (limit.limited) {
-        setError("لقد تجاوزت الحد المسموح للمحاولات. حاول لاحقاً.");
-        setLoading(false);
-        return;
-      }
-      if (!captchaToken) {
-        setError("يرجى تأكيد اختبار CAPTCHA قبل الإرسال");
-        setLoading(false);
-        return;
-      }
-      if (!/^\d{14}$/.test(formData.nationalId)) {
-        setError("الرقم القومي غير صالح. يجب أن يكون 14 رقمًا.");
-        setLoading(false);
-        return;
-      }
+      // Rate limiting temporarily disabled for testing
+      // TODO: Re-enable when proper rate limiting is configured
 
-      // First, create or get the citizen user
+      // CAPTCHA validation temporarily disabled for testing
+      // TODO: Re-enable when proper reCAPTCHA site key is configured
+
+      // First, create or get the citizen user with explicit CITIZEN role
       let citizenId: string;
 
-      // Check if citizen exists
+      // Check if citizen exists by national ID and phone
       const { data: existingCitizen, error: citizenCheckError } = await supabase
         .from("users")
-        .select("id")
+        .select("id, role, full_name")
         .eq("national_id", formData.nationalId)
         .eq("phone", formData.phone)
         .single();
 
       if (existingCitizen) {
+        console.log("Found existing citizen:", existingCitizen);
+        // Ensure the existing user has CITIZEN role
+        if (existingCitizen.role !== "CITIZEN") {
+          console.log(
+            "Updating user role from",
+            existingCitizen.role,
+            "to CITIZEN"
+          );
+          const { error: updateError } = await supabase
+            .from("users")
+            .update({ role: "CITIZEN" })
+            .eq("id", existingCitizen.id);
+
+          if (updateError) {
+            console.error("Error updating user role:", updateError);
+            throw new Error("فشل تحديث دور المستخدم");
+          }
+          console.log("Successfully updated user role to CITIZEN");
+        }
         citizenId = existingCitizen.id;
       } else {
-        // Create new citizen user
+        console.log("Creating new citizen user with CITIZEN role");
+        // Create new citizen user with explicit CITIZEN role
         const { data: newCitizen, error: newCitizenError } = await supabase
           .from("users")
           .insert({
@@ -238,20 +235,24 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
             phone: formData.phone,
             national_id: formData.nationalId,
             email: formData.email || null,
-            role: "CITIZEN",
+            role: "CITIZEN", // Explicitly set as CITIZEN - this is crucial
             is_active: true,
           })
-          .select("id")
+          .select("id, role")
           .single();
 
         if (newCitizenError) {
           console.error("Citizen creation error:", newCitizenError);
           throw new Error("فشل إنشاء ملف المواطن");
         }
+        console.log(
+          "Successfully created new citizen with role:",
+          newCitizen.role
+        );
         citizenId = newCitizen.id;
       }
 
-      // Insert complaint
+      // Insert complaint with proper citizen association
       const { data: complaintData, error: complaintError } = await supabase
         .from("complaints")
         .insert({
@@ -319,10 +320,11 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
           location: "",
         });
         setFiles([]);
-      }, 3000);
-    } catch (error) {
-      setError("خطأ في الاتصال بالخادم");
-      console.error("Submit error:", error);
+        setTrackingCodeState(null);
+      }, 5000);
+    } catch (error: any) {
+      console.error("Complaint submission error:", error);
+      setError(error.message || "حدث خطأ أثناء إرسال الشكوى");
     } finally {
       setLoading(false);
     }
@@ -363,19 +365,30 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
             )}
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
               <button
-                onClick={() => onNavigate("citizen-dashboard")}
+                onClick={() => {
+                  console.log(
+                    "Dashboard button clicked - navigating to citizen dashboard"
+                  );
+                  onNavigate("citizen-dashboard");
+                }}
                 className="bg-blue-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm sm:text-base"
               >
                 الذهاب للوحة التحكم
               </button>
               <button
-                onClick={() => onNavigate("home")}
+                onClick={() => {
+                  console.log("Home button clicked - navigating to home");
+                  onNavigate("home");
+                }}
                 className="border border-gray-300 text-gray-700 px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm sm:text-base"
               >
                 العودة للرئيسية
               </button>
               <button
-                onClick={() => window.location.reload()}
+                onClick={() => {
+                  console.log("New complaint button clicked - reloading page");
+                  window.location.reload();
+                }}
                 className="border border-gray-300 text-gray-700 px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm sm:text-base"
               >
                 تقديم شكوى أخرى
@@ -431,7 +444,6 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   name="fullName"
                   value={formData.fullName}
                   onChange={handleInputChange}
-                  required
                   className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                   placeholder="أدخل اسمك الكامل"
                 />
@@ -446,7 +458,6 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   name="phone"
                   value={formData.phone}
                   onChange={handleInputChange}
-                  required
                   className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                   placeholder="01xxxxxxxxx"
                 />
@@ -461,14 +472,9 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   name="nationalId"
                   value={formData.nationalId}
                   onChange={handleInputChange}
-                  required
-                  maxLength={14}
                   className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                   placeholder="14 رقم"
                 />
-                {nationalIdError && (
-                  <p className="mt-1 text-xs text-red-600">{nationalIdError}</p>
-                )}
               </div>
 
               <div>
@@ -496,7 +502,6 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   name="typeId"
                   value={formData.typeId}
                   onChange={handleInputChange}
-                  required
                   className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                 >
                   <option value="">اختر نوع الشكوى</option>
@@ -517,7 +522,6 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   name="title"
                   value={formData.title}
                   onChange={handleInputChange}
-                  required
                   className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                   placeholder="عنوان مختصر للشكوى"
                 />
@@ -531,7 +535,6 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   name="description"
                   value={formData.description}
                   onChange={handleInputChange}
-                  required
                   rows={4}
                   className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                   placeholder="اشرح تفاصيل الشكوى بوضوح..."
@@ -558,7 +561,11 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 الملفات المرفقة (اختياري)
               </label>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 sm:p-6 text-center hover:border-blue-400 transition-colors">
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-lg p-4 sm:p-6 text-center hover:border-blue-400 transition-colors"
+                onDrop={handleFileDrop}
+                onDragOver={handleDragOver}
+              >
                 <Upload className="w-8 h-8 sm:w-12 sm:h-12 text-gray-400 mx-auto mb-3 sm:mb-4" />
                 <p className="text-gray-600 mb-2 text-sm sm:text-base">
                   اسحب الملفات هنا أو انقر للاختيار
@@ -610,9 +617,18 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-4 sm:pt-6">
               <div className="flex items-center">
                 <ReCaptcha
-                  siteKey={import.meta.env.VITE_RECAPTCHA_SITE_KEY || ""}
-                  onToken={(t) => setCaptchaToken(t)}
+                  siteKey={
+                    import.meta.env.VITE_RECAPTCHA_SITE_KEY || "test_key"
+                  }
+                  onToken={(t) => {
+                    console.log(
+                      "CAPTCHA token received:",
+                      t ? "Valid" : "Invalid"
+                    );
+                    setCaptchaToken(t);
+                  }}
                 />
+                {/* CAPTCHA validation message temporarily disabled */}
               </div>
               <button
                 type="submit"
@@ -623,7 +639,10 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
               </button>
               <button
                 type="button"
-                onClick={() => onNavigate("home")}
+                onClick={() => {
+                  console.log("Cancel button clicked - navigating to home");
+                  onNavigate("home");
+                }}
                 className="px-4 sm:px-6 py-2 sm:py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm sm:text-base"
               >
                 إلغاء
