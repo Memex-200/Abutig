@@ -4,7 +4,6 @@ import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../utils/supabaseClient.ts";
 import ReCaptcha from "./ReCaptcha";
 
-
 interface ComplaintFormProps {
   onNavigate: (page: string) => void;
 }
@@ -12,8 +11,6 @@ interface ComplaintFormProps {
 interface ComplaintType {
   id: string;
   name: string;
-  description: string;
-  icon: string;
 }
 
 const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
@@ -32,74 +29,7 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
   const [complaintTypes, setComplaintTypes] = useState<ComplaintType[]>([]);
 
   // Fallback types in case API fails
-  const fallbackTypes: ComplaintType[] = [
-    {
-      id: "1",
-      name: "مخالفات البناء",
-      description: "مخالفات البناء والبناء بدون ترخيص",
-      icon: "🏗️",
-    },
-    {
-      id: "2",
-      name: "مشاكل الصرف الصحي",
-      description: "مشاكل في شبكة الصرف الصحي والصرف",
-      icon: "🚽",
-    },
-    {
-      id: "3",
-      name: "النظافة وجمع القمامة",
-      description: "شكاوى النظافة العامة وجمع القمامة",
-      icon: "🗑️",
-    },
-    {
-      id: "4",
-      name: "إنارة الشوارع والكهرباء",
-      description: "مشاكل في إنارة الشوارع والكهرباء",
-      icon: "💡",
-    },
-    {
-      id: "5",
-      name: "صيانة الطرق",
-      description: "صيانة الطرق والأرصفة",
-      icon: "🛣️",
-    },
-    {
-      id: "6",
-      name: "مشاكل إمداد المياه",
-      description: "مشاكل في إمداد وتوزيع المياه",
-      icon: "💧",
-    },
-    {
-      id: "7",
-      name: "مشاكل المرور والمواقف",
-      description: "إشارات المرور ومشاكل المواقف",
-      icon: "🚗",
-    },
-    {
-      id: "8",
-      name: "الحدائق والمساحات الخضراء",
-      description: "صيانة الحدائق العامة والمساحات الخضراء",
-      icon: "🌳",
-    },
-    {
-      id: "9",
-      name: "شكاوى الضوضاء",
-      description: "شكاوى الضوضاء والإزعاج",
-      icon: "🔊",
-    },
-    {
-      id: "10",
-      name: "الأمان والسلامة العامة",
-      description: "مخاوف الأمان والسلامة العامة",
-      icon: "🛡️",
-    },
-    {
-      id: "11",
-      name: "أخرى",
-      description: "شكاوى أخرى لا تنتمي للفئات السابقة",
-      icon: "📝",
-    },
-  ];
+  const fallbackTypes: ComplaintType[] = [{ id: "other", name: "أخرى" }];
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [trackingCodeState, setTrackingCodeState] = useState<string | null>(
@@ -116,16 +46,10 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
     try {
       const { data, error } = await supabase
         .from("complaint_types")
-        .select("id,name,description,icon")
-        .eq("is_active", true)
+        .select("id,name")
         .order("name", { ascending: true });
       if (!error && data) {
-        const mapped = (data as any[]).map((t) => ({
-          id: t.id,
-          name: t.name,
-          description: t.description,
-          icon: t.icon,
-        }));
+        const mapped = (data as any[]).map((t) => ({ id: t.id, name: t.name }));
         setComplaintTypes(mapped);
       } else {
         setComplaintTypes(fallbackTypes);
@@ -167,11 +91,18 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
   };
 
   const validateForm = () => {
-    // Only check if at least description is provided
-    if (!formData.description.trim()) {
-      setError("وصف الشكوى مطلوب");
-      return false;
-    }
+    if (!formData.fullName.trim()) return setError("الاسم مطلوب"), false;
+    if (!formData.phone.trim()) return setError("رقم الهاتف مطلوب"), false;
+    if (!formData.email.trim())
+      return setError("البريد الإلكتروني مطلوب"), false;
+    if (!formData.nationalId.trim())
+      return setError("الرقم القومي مطلوب"), false;
+    if (!formData.typeId.trim()) return setError("نوع الشكوى مطلوب"), false;
+    if (!formData.title.trim()) return setError("عنوان الشكوى مطلوب"), false;
+    if (!formData.description.trim())
+      return setError("وصف الشكوى مطلوب"), false;
+    if (!formData.location.trim()) return setError("العنوان مطلوب"), false;
+    setError("");
     return true;
   };
 
@@ -193,120 +124,51 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
       // CAPTCHA validation temporarily disabled for testing
       // TODO: Re-enable when proper reCAPTCHA site key is configured
 
-      // First, create or get the citizen user with explicit CITIZEN role
-      let citizenId: string;
-
-      // Check if citizen exists by national ID and phone
-      const { data: existingCitizen, error: citizenCheckError } = await supabase
-        .from("users")
-        .select("id, role, full_name")
-        .eq("national_id", formData.nationalId)
-        .eq("phone", formData.phone)
-        .single();
-
-      if (existingCitizen) {
-        console.log("Found existing citizen:", existingCitizen);
-        // Ensure the existing user has CITIZEN role
-        if (existingCitizen.role !== "CITIZEN") {
-          console.log(
-            "Updating user role from",
-            existingCitizen.role,
-            "to CITIZEN"
-          );
-          const { error: updateError } = await supabase
-            .from("users")
-            .update({ role: "CITIZEN" })
-            .eq("id", existingCitizen.id);
-
-          if (updateError) {
-            console.error("Error updating user role:", updateError);
-            throw new Error("فشل تحديث دور المستخدم");
-          }
-          console.log("Successfully updated user role to CITIZEN");
-        }
-        citizenId = existingCitizen.id;
-      } else {
-        console.log("Creating new citizen user with CITIZEN role");
-        // Create new citizen user with explicit CITIZEN role
-        const { data: newCitizen, error: newCitizenError } = await supabase
-          .from("users")
-          .insert({
-            full_name: formData.fullName,
-            phone: formData.phone,
-            national_id: formData.nationalId,
-            email: formData.email || null,
-            role: "CITIZEN", // Explicitly set as CITIZEN - this is crucial
-            is_active: true,
-          })
-          .select("id, role")
-          .single();
-
-        if (newCitizenError) {
-          console.error("Citizen creation error:", newCitizenError);
-          throw new Error("فشل إنشاء ملف المواطن");
-        }
-        console.log(
-          "Successfully created new citizen with role:",
-          newCitizen.role
-        );
-        citizenId = newCitizen.id;
-      }
-
-      // Insert complaint with proper citizen association
-      const { data: complaintData, error: complaintError } = await supabase
-        .from("complaints")
-        .insert({
-          citizen_id: citizenId,
-          type_id: formData.typeId,
-          title: formData.title,
-          description: formData.description,
-          location: formData.location || null,
-          status: "NEW",
-          national_id: formData.nationalId,
-        })
-        .select("id, tracking_code")
-        .single();
-
-      if (complaintError) {
-        console.error("Complaint insert error:", complaintError);
-        throw new Error(complaintError.message || "فشل إرسال الشكوى");
-      }
-
-      const complaintId = complaintData.id;
-      const trackingCode = (complaintData as any).tracking_code as string;
-      setTrackingCodeState(trackingCode || null);
-
-      // Upload files to Supabase Storage (optional)
+      // Upload the first image (optional)
+      let imageUrl: string | null = null;
       if (files.length > 0) {
-        for (const file of files) {
-          const path = `${complaintId}/${Date.now()}-${file.name}`;
-          const upload = await supabase.storage
-            .from("complaint-files")
-            .upload(path, file, {
-              upsert: false,
-            });
-          if (!upload.error) {
-            await supabase.from("complaint_files").insert({
-              complaint_id: complaintId,
-              file_path: path,
-              file_type: file.type,
-              file_size: file.size,
-            });
-          }
+        const file = files[0];
+        const fileExt = file.name.split(".").pop();
+        const filePath = `${Date.now()}_${Math.random()
+          .toString(36)
+          .slice(2)}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from("complaint-images")
+          .upload(filePath, file, { upsert: false });
+        if (uploadError) {
+          console.warn(
+            "Image upload failed, continuing without image:",
+            uploadError.message
+          );
+        } else {
+          const { data: publicUrlData } = supabase.storage
+            .from("complaint-images")
+            .getPublicUrl(filePath);
+          imageUrl = publicUrlData.publicUrl || null;
         }
       }
 
-      // Auto-login citizen context (create complainant object from submitted data)
-      const complainantData = {
-        id: complaintId, // Use complaint ID as temporary ID
-        fullName: formData.fullName,
+      // Insert complaint into simple public.complaints
+      const { error: insertError } = await supabase.from("complaints").insert({
+        name: formData.fullName,
         phone: formData.phone,
-        nationalId: formData.nationalId,
-      };
-      loginComplainant(complainantData, "");
+        email: formData.email,
+        national_id: formData.nationalId,
+        title: formData.title,
+        details: formData.description,
+        description: formData.description, // لبعض قواعد البيانات القديمة التي تشترط هذا العمود
+        image_url: imageUrl,
+        type_id: formData.typeId || null,
+        address: formData.location,
+        // status defaults to 'Pending'
+      });
+
+      if (insertError) {
+        console.error("Complaint insert error:", insertError);
+        throw new Error(insertError.message || "فشل إرسال الشكوى");
+      }
 
       setSuccess(true);
-      recordAttempt(rule);
       setTimeout(() => {
         setSuccess(false);
         setFormData({
@@ -343,26 +205,7 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
               شكراً لك على تقديم الشكوى. سيتم مراجعتها والرد عليك في أقرب وقت
               ممكن.
             </p>
-            {trackingCodeState && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-right">
-                <div className="text-sm text-gray-700 mb-1">
-                  رقم تتبع الشكوى
-                </div>
-                <div className="flex items-center justify-between">
-                  <code className="font-mono text-blue-700 text-lg break-all">
-                    {trackingCodeState}
-                  </code>
-                  <button
-                    onClick={() =>
-                      navigator.clipboard.writeText(trackingCodeState)
-                    }
-                    className="ml-3 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                  >
-                    نسخ
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* No tracking code in simple flow */}
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
               <button
                 onClick={() => {

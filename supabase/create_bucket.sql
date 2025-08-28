@@ -1,0 +1,1 @@
+-- Run this once in Supabase SQL editor --\n-- Storage bucket for images (public)\nselect storage.create_bucket('complaint-images', true, 'public');

@@ -1,197 +1,459 @@
-# Complaint Management System - Implementation Guide
+# دليل تنفيذ نظام إدارة الشكاوى المحسن
 
-## Overview
+## نظرة عامة على النظام الجديد
 
-This guide provides step-by-step instructions to fix the complaint management system where citizen-submitted complaints were incorrectly assigned "employee" roles and displayed in the wrong sections.
+تم إعادة تصميم النظام بالكامل لحل جميع المشاكل السابقة وتوفير نظام شامل ومحسن.
 
-## Issues Fixed
+### المميزات الجديدة:
 
-### 1. Role Assignment Issue
+✅ **نظام مصادقة محسن** مع role-based access control  
+✅ **إدارة شكاوى شاملة** مع validation كامل  
+✅ **نظام إشعارات متقدم** مع real-time updates  
+✅ **حماية البيانات الحساسة** (الرقم القومي للأدمين فقط)  
+✅ **إحصائيات متقدمة** للأدمين  
+✅ **أمان محسن** مع RLS policies شاملة
 
-- **Problem**: Citizens were assigned "EMPLOYEE" role instead of "CITIZEN"
-- **Solution**: Updated complaint submission logic to explicitly assign "CITIZEN" role
+## خطوات التنفيذ
 
-### 2. Display Location Issue
+### 1. إعداد قاعدة البيانات
 
-- **Problem**: Complaints appeared in "User Management" instead of "Complaint Management"
-- **Solution**: Updated UI routing and data fetching to display complaints in correct sections
-
-### 3. Data Consistency Issue
-
-- **Problem**: Existing data had incorrect role assignments
-- **Solution**: Created comprehensive database fix script
-
-## Implementation Steps
-
-### Step 1: Database Fixes
-
-1. **Run the Database Fix Script**:
-
-   ```sql
-   -- Execute fix_complaint_roles.sql in Supabase SQL Editor
-   ```
-
-   This script will:
-
-   - Update existing users with complaints to have "CITIZEN" role
-   - Create missing user records for complaints
-   - Link complaints to correct citizen users
-   - Provide verification queries
-
-2. **Apply Updated RLS Policies**:
-   ```sql
-   -- Execute apply_rls_policies.sql in Supabase SQL Editor
-   ```
-   This ensures proper role-based access control.
-
-### Step 2: Code Updates
-
-#### ComplaintForm.tsx Changes
-
-- Enhanced role assignment logic
-- Added explicit "CITIZEN" role assignment
-- Improved error handling and logging
-- Added validation for existing users
-
-#### AdminDashboard.tsx Changes
-
-- Updated `fetchComplaints()` to properly handle citizen data
-- Modified `fetchUsers()` to only show employees and admins
-- Enhanced UI to display citizen role information
-- Improved data transformation and error handling
-
-### Step 3: UI Improvements
-
-#### Complaint Management Section
-
-- Displays all complaints with proper citizen information
-- Shows citizen role (مواطن) in the complaints table
-- Proper filtering and search functionality
-
-#### User Management Section
-
-- Only shows employees and admins
-- Citizens are managed through the complaints system
-- Clear role distinction in the UI
-
-## Technical Details
-
-### Database Schema
+#### الخطوة الأولى: تشغيل Migration
 
 ```sql
--- Users table with proper role enum
-CREATE TYPE user_role AS ENUM ('CITIZEN', 'EMPLOYEE', 'ADMIN');
-
--- Complaints table with citizen association
-CREATE TABLE complaints (
-  id UUID PRIMARY KEY,
-  citizen_id UUID REFERENCES users(id),
-  -- other fields...
-);
+-- شغل هذا الملف أولاً في Supabase SQL Editor
+supabase/database_migration.sql
 ```
 
-### Role-Based Access Control
-
-- **Citizens**: Can only see their own complaints
-- **Employees**: Can see complaints assigned to them
-- **Admins**: Can see all complaints and manage users
-
-### Data Flow
-
-1. Citizen submits complaint → Creates/updates user with "CITIZEN" role
-2. Complaint is stored with proper citizen association
-3. Admin dashboard displays complaints in correct section
-4. User management only shows employees and admins
-
-## Verification Steps
-
-### 1. Check Database
+#### الخطوة الثانية: تطبيق RLS Policies
 
 ```sql
--- Verify user roles
-SELECT role, COUNT(*) FROM users GROUP BY role;
-
--- Verify complaint associations
-SELECT c.id, u.role, u.full_name
-FROM complaints c
-JOIN users u ON c.citizen_id = u.id;
+-- شغل هذا الملف ثانياً
+supabase/rls_policies.sql
 ```
 
-### 2. Test Complaint Submission
-
-1. Submit a new complaint as a citizen
-2. Verify the user is created with "CITIZEN" role
-3. Check that the complaint appears in "Complaint Management"
-
-### 3. Test Admin Dashboard
-
-1. Login as admin
-2. Navigate to "Complaint Management" - should show all complaints
-3. Navigate to "User Management" - should only show employees and admins
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Role Assignment Still Wrong**
-
-   - Check if the database fix script was executed
-   - Verify RLS policies are applied
-   - Check browser console for errors
-
-2. **Complaints Not Showing**
-
-   - Verify complaint-citizen associations in database
-   - Check RLS policies for admin access
-   - Ensure proper data transformation in fetchComplaints()
-
-3. **UI Not Updating**
-   - Clear browser cache
-   - Restart development server
-   - Check for TypeScript compilation errors
-
-### Debug Commands
+#### الخطوة الثالثة: إنشاء الدوال
 
 ```sql
--- Check current state
-SELECT 'Users' as table_name, role, COUNT(*) as count FROM users GROUP BY role
-UNION ALL
-SELECT 'Complaints' as table_name, status, COUNT(*) as count FROM complaints GROUP BY status;
-
--- Check specific complaint
-SELECT c.*, u.full_name, u.role
-FROM complaints c
-JOIN users u ON c.citizen_id = u.id
-WHERE c.id = 'your-complaint-id';
+-- شغل هذا الملف ثالثاً
+supabase/functions.sql
 ```
 
-## Performance Considerations
+#### الخطوة الرابعة: إنشاء المستخدمين
 
-1. **Indexing**: Ensure proper indexes on frequently queried fields
-2. **Caching**: Consider implementing client-side caching for complaint data
-3. **Pagination**: Implement pagination for large complaint lists
-4. **Real-time Updates**: Consider using Supabase real-time subscriptions
+```sql
+-- شغل هذا الملف رابعاً
+supabase/create_admin_users.sql
+```
 
-## Security Considerations
+### 2. إنشاء المستخدمين في Supabase Auth
 
-1. **Role Validation**: Always validate user roles on both client and server
-2. **RLS Policies**: Ensure all tables have proper RLS policies
-3. **Input Validation**: Validate all form inputs before database operations
-4. **Error Handling**: Don't expose sensitive information in error messages
+#### للأدمين:
 
-## Future Enhancements
+1. اذهب إلى **Authentication > Users** في Supabase Dashboard
+2. اضغط **"Add User"**
+3. أدخل البيانات:
+   - **Email**: `emanhassanmahmoud1@gmail.com`
+   - **Password**: (اختر كلمة مرور قوية)
+   - **User Metadata**:
+     ```json
+     {
+       "full_name": "إيمان حسن محمود",
+       "role": "ADMIN"
+     }
+     ```
 
-1. **Complaint Assignment**: Allow admins to assign complaints to employees
-2. **Status Tracking**: Implement detailed status tracking with timestamps
-3. **Notifications**: Add real-time notifications for status changes
-4. **Reporting**: Implement comprehensive reporting features
-5. **Mobile Support**: Optimize for mobile devices
+#### للموظفين:
 
-## Support
+1. كرر نفس الخطوات للموظفين:
+   - `ahmed.employee@test.com`
+   - `fatima.employee@test.com`
+   - `mohamed.employee@test.com`
 
-For issues or questions:
+### 3. تحديث الكود في التطبيق
 
-1. Check the troubleshooting section above
-2. Review browser console for errors
-3. Verify database state using the verification queries
-4. Check Supabase logs for backend errors
+#### ملف `ComplaintForm.tsx`:
+
+```typescript
+const handleSubmit = async (formData: ComplaintFormData) => {
+  try {
+    console.log("Submitting complaint form...");
+
+    const { data, error } = await supabase.rpc("submit_complaint", {
+      p_type_id: formData.typeId,
+      p_title: formData.title,
+      p_description: formData.description,
+      p_location: formData.location || null,
+      p_priority: formData.priority || "MEDIUM",
+    });
+
+    if (error) {
+      console.error("Complaint submission error:", error);
+      setError("فشل في تقديم الشكوى");
+      return;
+    }
+
+    if (data && data.success) {
+      console.log("Complaint submitted successfully:", data);
+      setSuccess(`تم تقديم الشكوى بنجاح! رقم التتبع: ${data.tracking_code}`);
+      reset();
+    } else {
+      console.error("Complaint submission failed:", data);
+      setError(data?.message || "فشل في تقديم الشكوى");
+    }
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    setError("حدث خطأ غير متوقع");
+  }
+};
+```
+
+#### ملف `ComplaintList.tsx`:
+
+```typescript
+const fetchComplaints = async () => {
+  try {
+    const { data, error } = await supabase
+      .from("complaints")
+      .select(
+        `
+        *,
+        complaint_types(name, icon, color),
+        users!citizen_id(full_name, email, national_id),
+        assigned_user:users!assigned_user_id(full_name, email)
+      `
+      )
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching complaints:", error);
+      return;
+    }
+
+    setComplaints(data || []);
+  } catch (error) {
+    console.error("Unexpected error:", error);
+  }
+};
+```
+
+#### ملف `ComplaintDetail.tsx`:
+
+```typescript
+const updateComplaintStatus = async (newStatus: string) => {
+  try {
+    const { data, error } = await supabase.rpc("update_complaint_status", {
+      p_complaint_id: complaint.id,
+      p_new_status: newStatus,
+      p_notes: notes,
+    });
+
+    if (error) {
+      console.error("Status update error:", error);
+      setError("فشل في تحديث الحالة");
+      return;
+    }
+
+    if (data && data.success) {
+      setSuccess("تم تحديث حالة الشكوى بنجاح");
+      fetchComplaintDetails();
+    } else {
+      setError(data?.message || "فشل في تحديث الحالة");
+    }
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    setError("حدث خطأ غير متوقع");
+  }
+};
+```
+
+### 4. إنشاء مكونات جديدة
+
+#### مكون الإشعارات `Notifications.tsx`:
+
+```typescript
+import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabase";
+
+export default function Notifications() {
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchNotifications = async () => {
+    try {
+      const { data, error } = await supabase.rpc("get_notifications", {
+        p_limit: 20,
+        p_offset: 0,
+      });
+
+      if (error) {
+        console.error("Error fetching notifications:", error);
+        return;
+      }
+
+      if (data && data.success) {
+        setNotifications(data.notifications);
+      }
+    } catch (error) {
+      console.error("Unexpected error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const markAsRead = async (notificationId: string) => {
+    try {
+      const { data, error } = await supabase.rpc("mark_notification_read", {
+        p_notification_id: notificationId,
+      });
+
+      if (data && data.success) {
+        fetchNotifications();
+      }
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  return (
+    <div className="notifications-container">
+      <h2>الإشعارات</h2>
+      {loading ? (
+        <div>جاري التحميل...</div>
+      ) : (
+        <div className="notifications-list">
+          {notifications.map((notification) => (
+            <div
+              key={notification.id}
+              className={`notification-item ${
+                !notification.is_read ? "unread" : ""
+              }`}
+              onClick={() => markAsRead(notification.id)}
+            >
+              <h3>{notification.title}</h3>
+              <p>{notification.message}</p>
+              <small>
+                {new Date(notification.created_at).toLocaleString("ar-EG")}
+              </small>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+#### مكون الإحصائيات `Statistics.tsx`:
+
+```typescript
+import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabase";
+
+export default function Statistics() {
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchStatistics = async () => {
+    try {
+      const { data, error } = await supabase.rpc("get_complaint_statistics");
+
+      if (error) {
+        console.error("Error fetching statistics:", error);
+        return;
+      }
+
+      if (data && data.success) {
+        setStats(data.statistics);
+      }
+    } catch (error) {
+      console.error("Unexpected error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatistics();
+  }, []);
+
+  if (loading) return <div>جاري التحميل...</div>;
+  if (!stats) return <div>لا يمكن تحميل الإحصائيات</div>;
+
+  return (
+    <div className="statistics-container">
+      <h2>إحصائيات الشكاوى</h2>
+      <div className="stats-grid">
+        <div className="stat-card">
+          <h3>إجمالي الشكاوى</h3>
+          <p>{stats.total_complaints}</p>
+        </div>
+        <div className="stat-card">
+          <h3>شكاوى جديدة</h3>
+          <p>{stats.new_complaints}</p>
+        </div>
+        <div className="stat-card">
+          <h3>قيد المعالجة</h3>
+          <p>{stats.in_progress_complaints}</p>
+        </div>
+        <div className="stat-card">
+          <h3>تم الحل</h3>
+          <p>{stats.resolved_complaints}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+### 5. تحديث ملفات التوجيه
+
+#### `app/dashboard/page.tsx`:
+
+```typescript
+"use client";
+
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import ComplaintList from "@/components/ComplaintList";
+import Statistics from "@/components/Statistics";
+import Notifications from "@/components/Notifications";
+
+export default function Dashboard() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const { data, error } = await supabase.rpc("get_user_profile");
+
+        if (data && data.success) {
+          setUser(data.user);
+        }
+      } catch (error) {
+        console.error("Error fetching user profile:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserProfile();
+  }, []);
+
+  if (loading) return <div>جاري التحميل...</div>;
+  if (!user) return <div>لا يمكن تحميل البيانات</div>;
+
+  return (
+    <div className="dashboard-container">
+      <div className="dashboard-header">
+        <h1>مرحباً {user.full_name}</h1>
+        <p>
+          دورك:{" "}
+          {user.role === "ADMIN"
+            ? "مدير"
+            : user.role === "EMPLOYEE"
+            ? "موظف"
+            : "مواطن"}
+        </p>
+      </div>
+
+      <div className="dashboard-content">
+        {user.role === "ADMIN" && (
+          <div className="admin-section">
+            <Statistics />
+          </div>
+        )}
+
+        <div className="notifications-section">
+          <Notifications />
+        </div>
+
+        <div className="complaints-section">
+          <ComplaintList />
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+## اختبار النظام
+
+### 1. اختبار تسجيل الدخول
+
+- جرب تسجيل الدخول بحساب الأدمين
+- جرب تسجيل الدخول بحساب الموظف
+- جرب تسجيل الدخول بحساب المواطن
+
+### 2. اختبار تقديم الشكاوى
+
+- قدم شكوى جديدة كمواطن
+- تحقق من ظهور الإشعار للأدمين
+- تحقق من إنشاء رقم التتبع
+
+### 3. اختبار إدارة الشكاوى
+
+- كأدمين، عيّن شكوى لموظف
+- كموظف، حدث حالة الشكوى
+- تحقق من ظهور الإشعارات للمواطن
+
+### 4. اختبار الأمان
+
+- تحقق من عدم ظهور الرقم القومي للمواطنين
+- تحقق من عدم إمكانية الوصول لبيانات الآخرين
+- تحقق من عمل RLS policies
+
+## استكشاف الأخطاء
+
+### مشاكل شائعة:
+
+1. **خطأ في تسجيل الدخول**:
+
+   - تأكد من إنشاء المستخدم في Supabase Auth
+   - تأكد من تطابق البريد الإلكتروني
+
+2. **خطأ في تقديم الشكاوى**:
+
+   - تحقق من تشغيل جميع ملفات SQL
+   - تحقق من وجود أنواع الشكاوى
+
+3. **خطأ في الصلاحيات**:
+   - تحقق من تطبيق RLS policies
+   - تحقق من دور المستخدم
+
+### أوامر تشخيصية:
+
+```sql
+-- فحص المستخدمين
+SELECT * FROM public.users ORDER BY created_at DESC;
+
+-- فحص الشكاوى
+SELECT * FROM public.complaints ORDER BY created_at DESC;
+
+-- فحص السياسات
+SELECT * FROM pg_policies WHERE schemaname = 'public';
+
+-- فحص الدوال
+SELECT routine_name FROM information_schema.routines WHERE routine_schema = 'public';
+```
+
+## ملاحظات مهمة
+
+✅ **احتفظ بنسخة احتياطية** من البيانات قبل تشغيل Migration  
+✅ **اختبر النظام** في بيئة التطوير أولاً  
+✅ **راجع الأخطاء** في console المتصفح  
+✅ **تحقق من الصلاحيات** لكل دور مستخدم  
+✅ **اختبر جميع الوظائف** قبل النشر للإنتاج
+
+## الدعم
+
+إذا واجهت أي مشاكل:
+
+1. راجع رسائل الخطأ في console
+2. تحقق من تشغيل جميع ملفات SQL
+3. تأكد من إنشاء المستخدمين في Auth
+4. راجع RLS policies

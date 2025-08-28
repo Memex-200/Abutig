@@ -174,26 +174,16 @@ const AdminDashboard: React.FC = () => {
   };
 
   const fetchComplaints = async () => {
-    // Double-check admin access
-    if (!user || user.role !== "ADMIN") {
-      console.error("Access denied: fetchComplaints called by non-admin user");
-      return;
-    }
-
+    if (!user || user.role !== "ADMIN") return;
     try {
-      console.log("Admin fetching all complaints...");
+      console.log("Admin fetching complaints (simple schema)...");
       let query = supabase
         .from("complaints")
         .select(
-          `
-          id, title, description, status, created_at, resolved_at, location,
-          type:complaint_types(id, name, icon, description),
-          citizen:users(id, full_name, phone, email, role, national_id)
-        `
+          "id, created_at, name, phone, email, national_id, title, details, image_url, address, status, type:complaint_types(id, name)"
         )
         .order("created_at", { ascending: false });
 
-      // Apply filters
       if (complaintFilters.status)
         query = query.eq("status", complaintFilters.status);
       if (complaintFilters.type)
@@ -205,65 +195,30 @@ const AdminDashboard: React.FC = () => {
       if (searchTerm) query = query.ilike("title", `%${searchTerm}%`);
 
       const { data, error } = await query;
-
       if (error) {
         console.error("Error fetching complaints:", error);
-        console.error("Error details:", {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-        });
         return;
       }
-
-      console.log("Raw complaints data from database:", data);
-
-      // Transform data and ensure proper citizen association
       const transformedData =
-        data?.map((complaint: any) => {
-          console.log(
-            "Processing complaint:",
-            complaint.id,
-            "with citizen:",
-            complaint.citizen
-          );
-
-          // Ensure citizen data is properly structured
-          const citizenData = complaint.citizen
-            ? {
-                id: complaint.citizen.id,
-                fullName: complaint.citizen.full_name || "غير محدد",
-                phone: complaint.citizen.phone || "غير محدد",
-                email: complaint.citizen.email || "",
-                role: complaint.citizen.role || "CITIZEN",
-                nationalId: complaint.citizen.national_id || "",
-              }
-            : {
-                id: "unknown",
-                fullName: "غير محدد",
-                phone: "غير محدد",
-                email: "",
-                role: "CITIZEN",
-                nationalId: "",
-              };
-
-          return {
-            id: complaint.id,
-            title: complaint.title,
-            description: complaint.description,
-            status: complaint.status,
-            createdAt: complaint.created_at,
-            resolvedAt: complaint.resolved_at,
-            priority: "MEDIUM", // Default priority since column doesn't exist
-            location: complaint.location,
-            type: complaint.type,
-            complainant: citizenData,
-          };
-        }) || [];
-
-      console.log("Transformed complaints data:", transformedData);
-
+        (data as any[])?.map((c) => ({
+          id: c.id,
+          title: c.title,
+          description: c.details,
+          status: c.status,
+          createdAt: c.created_at,
+          resolvedAt: undefined,
+          priority: "MEDIUM",
+          location: c.address,
+          type: { id: c.type?.id || "", name: c.type?.name || "" },
+          complainant: {
+            id: c.id,
+            fullName: c.name,
+            phone: c.phone,
+            email: c.email,
+            role: "CITIZEN",
+            nationalId: c.national_id,
+          },
+        })) || [];
       setComplaints(transformedData);
     } catch (error) {
       console.error("Error fetching complaints:", error);
@@ -401,60 +356,22 @@ const AdminDashboard: React.FC = () => {
 
   const handleUpdateComplaintStatus = async () => {
     if (!selectedComplaint || !statusUpdateForm.status) return;
-
     try {
-      // Update complaint status
       const { error } = await supabase
         .from("complaints")
-        .update({
-          status: statusUpdateForm.status,
-          resolved_at:
-            statusUpdateForm.status === "RESOLVED"
-              ? new Date().toISOString()
-              : null,
-        })
+        .update({ status: statusUpdateForm.status })
         .eq("id", selectedComplaint.id);
-
       if (error) {
         console.error("Error updating complaint status:", error);
         alert("فشل تحديث حالة الشكوى");
         return;
       }
-
-      // Send notification to citizen
-      if (selectedComplaint.complainant.id) {
-        const notificationData = {
-          user_id: selectedComplaint.complainant.id,
-          title: "تحديث حالة الشكوى",
-          message: `تم تحديث حالة شكواك إلى: ${getStatusLabel(statusUpdateForm.status)}${statusUpdateForm.notes ? ` - ${statusUpdateForm.notes}` : ''}`,
-          type: "COMPLAINT_UPDATE",
-          related_id: selectedComplaint.id,
-          is_read: false,
-          created_at: new Date().toISOString()
-        };
-
-        const { error: notificationError } = await supabase
-          .from("notifications")
-          .insert([notificationData]);
-
-        if (notificationError) {
-          console.error("Error creating notification:", notificationError);
-          // Don't fail the whole operation if notification fails
-        }
-      }
-
       alert("تم تحديث حالة الشكوى بنجاح");
-
-      // Update the selected complaint with new status
       setSelectedComplaint({
         ...selectedComplaint,
         status: statusUpdateForm.status,
       });
-
-      // Reset form
       setStatusUpdateForm({ status: "", notes: "" });
-
-      // Refresh data
       await fetchData();
     } catch (error) {
       console.error("Error updating complaint status:", error);

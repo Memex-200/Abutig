@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { LogIn, User, Phone, CreditCard, AlertCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { supabase } from "../utils/supabaseClient";
+import { supabase } from "../utils/supabaseClient.ts";
 
 interface LoginFormProps {
   onNavigate: (page: string) => void;
@@ -25,12 +25,39 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
     phone: "",
     nationalId: "",
   });
+
+  // Simple citizen path: redirect to dedicated citizen login form
+  const handleCitizenVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    onNavigate("citizen-login");
+  };
   const handleStaffLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
     try {
+      // Quick hardcoded admin check (no backend auth)
+      if (
+        staffForm.email === "emanhassanmahmoud1@gmail.com" &&
+        staffForm.password === "Emovmmm#951753"
+      ) {
+        const mappedUser = {
+          id: "hardcoded-admin",
+          email: staffForm.email,
+          fullName: "Administrator",
+          role: "ADMIN",
+        } as any;
+        login(mappedUser, "");
+        try {
+          localStorage.setItem("adminMode", "true");
+          localStorage.removeItem("impersonatedCitizenId");
+          localStorage.removeItem("impersonatedCitizenName");
+        } catch {}
+        onNavigate("admin-dashboard");
+        return;
+      }
+
       // Just check if user exists in "users" table
       const { data: userData, error: userError } = await supabase
         .from("users")
@@ -53,6 +80,15 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
         role: userData.role,
       };
       login(mappedUser, "");
+      try {
+        if (userData.role === "ADMIN") {
+          localStorage.setItem("adminMode", "true");
+        } else {
+          localStorage.removeItem("adminMode");
+        }
+        localStorage.removeItem("impersonatedCitizenId");
+        localStorage.removeItem("impersonatedCitizenName");
+      } catch {}
 
       // Navigate based on role
       if (userData.role === "ADMIN") {

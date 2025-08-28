@@ -20,9 +20,6 @@ const ComplaintTypeManager: React.FC = () => {
   // Form states
   const [formData, setFormData] = useState({
     name: "",
-    icon: "",
-    description: "",
-    is_active: true,
   });
 
   useEffect(() => {
@@ -58,7 +55,7 @@ const ComplaintTypeManager: React.FC = () => {
       console.log("Adding new complaint type:", formData);
       const { data, error } = await supabase
         .from("complaint_types")
-        .insert([formData])
+        .insert([{ name: formData.name }])
         .select();
 
       if (error) {
@@ -67,7 +64,7 @@ const ComplaintTypeManager: React.FC = () => {
       } else {
         console.log("Complaint type added successfully:", data);
         setShowAddForm(false);
-        setFormData({ name: "", icon: "", description: "", is_active: true });
+        setFormData({ name: "" });
         fetchComplaintTypes();
         setError("");
         alert("تم إضافة نوع الشكوى بنجاح!");
@@ -87,14 +84,14 @@ const ComplaintTypeManager: React.FC = () => {
     try {
       const { error } = await supabase
         .from("complaint_types")
-        .update(formData)
+        .update({ name: formData.name })
         .eq("id", id);
 
       if (error) {
         setError("فشل في تحديث نوع الشكوى: " + error.message);
       } else {
         setEditingId(null);
-        setFormData({ name: "", icon: "", description: "", is_active: true });
+        setFormData({ name: "" });
         fetchComplaintTypes();
         setError("");
       }
@@ -132,16 +129,13 @@ const ComplaintTypeManager: React.FC = () => {
     setEditingId(type.id);
     setFormData({
       name: type.name,
-      icon: type.icon,
-      description: type.description,
-      is_active: type.is_active,
     });
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setShowAddForm(false);
-    setFormData({ name: "", icon: "", description: "", is_active: true });
+    setFormData({ name: "" });
     setError("");
   };
 
@@ -189,35 +183,6 @@ const ComplaintTypeManager: React.FC = () => {
               }
               className="border border-gray-300 rounded-lg px-3 py-2"
             />
-            <input
-              type="text"
-              placeholder="الرمز (مثل: 🏗️)"
-              value={formData.icon}
-              onChange={(e) =>
-                setFormData({ ...formData, icon: e.target.value })
-              }
-              className="border border-gray-300 rounded-lg px-3 py-2"
-            />
-            <input
-              type="text"
-              placeholder="الوصف"
-              value={formData.description}
-              onChange={(e) =>
-                setFormData({ ...formData, description: e.target.value })
-              }
-              className="border border-gray-300 rounded-lg px-3 py-2 md:col-span-2"
-            />
-            <div className="flex items-center md:col-span-2">
-              <input
-                type="checkbox"
-                checked={formData.is_active}
-                onChange={(e) =>
-                  setFormData({ ...formData, is_active: e.target.checked })
-                }
-                className="ml-2"
-              />
-              <label className="text-sm text-gray-700">نشط</label>
-            </div>
           </div>
           <div className="flex gap-2 mt-3">
             <button
@@ -244,16 +209,7 @@ const ComplaintTypeManager: React.FC = () => {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
-                الرمز
-              </th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
                 الاسم
-              </th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
-                الوصف
-              </th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
-                الحالة
               </th>
               <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
                 الإجراءات
@@ -263,9 +219,6 @@ const ComplaintTypeManager: React.FC = () => {
           <tbody className="divide-y divide-gray-200">
             {complaintTypes.map((type) => (
               <tr key={type.id}>
-                <td className="px-4 py-3">
-                  <span className="text-2xl">{type.icon}</span>
-                </td>
                 <td className="px-4 py-3">
                   {editingId === type.id ? (
                     <input
@@ -278,47 +231,6 @@ const ComplaintTypeManager: React.FC = () => {
                     />
                   ) : (
                     <span className="font-medium">{type.name}</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  {editingId === type.id ? (
-                    <input
-                      type="text"
-                      value={formData.description}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          description: e.target.value,
-                        })
-                      }
-                      className="border border-gray-300 rounded px-2 py-1 w-full"
-                    />
-                  ) : (
-                    <span className="text-gray-600">{type.description}</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  {editingId === type.id ? (
-                    <input
-                      type="checkbox"
-                      checked={formData.is_active}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          is_active: e.target.checked,
-                        })
-                      }
-                    />
-                  ) : (
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs ${
-                        type.is_active
-                          ? "bg-green-100 text-green-800"
-                          : "bg-red-100 text-red-800"
-                      }`}
-                    >
-                      {type.is_active ? "نشط" : "غير نشط"}
-                    </span>
                   )}
                 </td>
                 <td className="px-4 py-3">

@@ -1,3 +1,44 @@
+-- Simplified schema for public complaints + admin management (no auth)
+
+create table if not exists public.complaint_types (
+  id uuid primary key default gen_random_uuid(),
+  name text not null
+);
+
+create table if not exists public.complaints (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamp with time zone default now(),
+  name text not null,
+  phone text not null,
+  email text not null,
+  national_id text not null,
+  title text not null,
+  details text not null,
+  image_url text,
+  type_id uuid references public.complaint_types(id) on delete set null,
+  address text not null,
+  status text not null default 'Pending'
+);
+
+create table if not exists public.admins (
+  id uuid primary key default gen_random_uuid(),
+  email text unique not null,
+  password text not null
+);
+
+-- Seed complaint types
+insert into public.complaint_types (name)
+values ('Service Issue'), ('Product Complaint'), ('Other')
+on conflict do nothing;
+
+-- Seed admin (plaintext for demo)
+insert into public.admins (email, password)
+values ('emanhassanmahmoud1@gmail.com', 'Emovmmm#951753')
+on conflict (email) do nothing;
+
+-- Storage bucket should be created manually or via UI: "complaint-images"
+-- For SQL API provisioning (if using PostgREST + storage SQL), run separately:
+-- select storage.create_bucket('complaint-images', true, 'public');
 -- Enums
 create type user_role as enum ('CITIZEN','EMPLOYEE','ADMIN');
 create type complaint_status as enum ('NEW','IN_PROGRESS','RESOLVED','OVERDUE');

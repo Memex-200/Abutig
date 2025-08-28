@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import { Phone, User, Shield, ArrowRight } from "lucide-react";
-import { supabase } from "../utils/supabaseClient";
+import { supabase } from "../utils/supabaseClient.ts";
+import { useAuth } from "../contexts/AuthContext";
 
 interface CitizenLoginFormProps {
   onNavigate: (page: string) => void;
 }
 
 const CitizenLoginForm: React.FC<CitizenLoginFormProps> = ({ onNavigate }) => {
+  const { loginComplainant } = useAuth();
   const [formData, setFormData] = useState({
     fullName: "",
     nationalId: "",
@@ -44,7 +46,7 @@ const CitizenLoginForm: React.FC<CitizenLoginFormProps> = ({ onNavigate }) => {
       // Check if citizen exists in the database
       const { data: existingComplaints, error } = await supabase
         .from("complaints")
-        .select("id, full_name, phone")
+        .select("id, phone")
         .eq("national_id", formData.nationalId)
         .eq("phone", formData.phone)
         .limit(1);
@@ -59,14 +61,14 @@ const CitizenLoginForm: React.FC<CitizenLoginFormProps> = ({ onNavigate }) => {
         const complainant = existingComplaints[0];
         const complainantData = {
           id: complainant.id,
-          fullName: complainant.full_name,
+          fullName: formData.fullName,
           phone: complainant.phone,
-        };
+          nationalId: formData.nationalId,
+        } as any;
 
-        // Store in localStorage for persistence
-        localStorage.setItem("complainant", JSON.stringify(complainantData));
-        localStorage.setItem("userType", "complainant");
-        window.location.reload();
+        // Update auth context + localStorage so ProtectedRoute allows access immediately
+        loginComplainant(complainantData, "");
+        onNavigate("citizen-dashboard");
       } else {
         setError(
           "لم يتم العثور على شكاوى بهذه البيانات. يرجى التأكد من صحة البيانات أو تقديم شكوى جديدة."

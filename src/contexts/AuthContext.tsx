@@ -152,7 +152,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } finally {
       setUser(null);
       setComplainant(null);
-      localStorage.clear();
+      try {
+        const keepAdmin = localStorage.getItem("adminMode");
+        localStorage.clear();
+        if (keepAdmin) localStorage.setItem("adminMode", keepAdmin);
+      } catch {}
     }
   };
 

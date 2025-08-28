@@ -13,11 +13,15 @@ import {
 } from "lucide-react";
 const HomePage = lazy(() => import("./components/HomePage"));
 const ComplaintForm = lazy(() => import("./components/ComplaintForm"));
+// simple components removed
 const CitizenDashboard = lazy(() => import("./components/CitizenDashboard"));
 const EmployeeDashboard = lazy(() => import("./components/EmployeeDashboard"));
 const AdminDashboard = lazy(() => import("./components/AdminDashboard"));
+const AdminCitizens = lazy(() => import("./components/AdminCitizens"));
+// simple components removed
 const AdminSetup = lazy(() => import("./components/AdminSetup"));
 const LoginForm = lazy(() => import("./components/LoginForm"));
+// simple components removed
 const CitizenLoginForm = lazy(() => import("./components/CitizenLoginForm"));
 import ProtectedRoute from "./components/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -35,9 +39,12 @@ const AppContent: React.FC = () => {
     const path = window.location.pathname;
     const pathToPage: Record<string, string> = {
       "/complaint-form": "complaint-form",
+
       "/citizen-dashboard": "citizen-dashboard",
       "/employee-dashboard": "employee-dashboard",
       "/admin-dashboard": "admin-dashboard",
+      "/admin/citizens": "admin-citizens",
+
       "/": "home",
     };
     const initial = pathToPage[path];
@@ -93,9 +100,12 @@ const AppContent: React.FC = () => {
     const pageToPath: Record<string, string> = {
       home: "/",
       "complaint-form": "/complaint-form",
+
       "citizen-dashboard": "/citizen-dashboard",
       "employee-dashboard": "/employee-dashboard",
       "admin-dashboard": "/admin-dashboard",
+      "admin-citizens": "/admin/citizens",
+
       login: "/login",
       "citizen-login": "/citizen-login",
     };
@@ -138,6 +148,12 @@ const AppContent: React.FC = () => {
         return (
           <ProtectedRoute allowedRoles={["ADMIN"]}>
             <AdminDashboard />
+          </ProtectedRoute>
+        );
+      case "admin-citizens":
+        return (
+          <ProtectedRoute allowedRoles={["ADMIN"]}>
+            <AdminCitizens />
           </ProtectedRoute>
         );
       case "login":

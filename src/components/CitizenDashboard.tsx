@@ -10,6 +10,12 @@ import {
   Wrench,
   Plus,
   Bell,
+  Building,
+  Shield,
+  Lightbulb,
+  Wifi,
+  Leaf,
+  MessageSquare,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import NotificationCenter from "./NotificationCenter";
@@ -21,6 +27,7 @@ interface Complaint {
   description: string;
   status: string;
   type: {
+    id: string;
     name: string;
     icon: string;
   };
@@ -30,6 +37,13 @@ interface Complaint {
 
 const CitizenDashboard: React.FC = () => {
   const { complainant } = useAuth();
+  const [impersonationName, setImpersonationName] = useState<string | null>(
+    null
+  );
+  const impersonatedCitizenId =
+    typeof window !== "undefined"
+      ? localStorage.getItem("impersonatedCitizenId")
+      : null;
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(
@@ -38,10 +52,31 @@ const CitizenDashboard: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
-    if (complainant) {
+    if (impersonatedCitizenId) {
+      // Admin impersonation path: fetch citizen by id first
+      const loadImpersonated = async () => {
+        try {
+          const { data, error } = await supabase
+            .from("users")
+            .select("id, full_name, phone, national_id")
+            .eq("id", impersonatedCitizenId)
+            .single();
+          if (!error && data) {
+            setImpersonationName(data.full_name || null);
+            await fetchComplaintsByIdentity(data.national_id || "");
+          }
+        } catch (e) {
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadImpersonated();
+    } else if (complainant) {
       fetchComplaints();
+    } else {
+      setLoading(false);
     }
-  }, [complainant]);
+  }, [complainant, impersonatedCitizenId]);
 
   const fetchComplaints = async () => {
     try {
@@ -56,21 +91,25 @@ const CitizenDashboard: React.FC = () => {
         complainant.nationalId
       );
 
-      // Get complaints by national ID and phone (since complainant doesn't have auth_user_id)
+      // Get complaints by national ID with complaint type relation
       const { data, error } = await supabase
         .from("complaints")
         .select(
-          "id,title,description,status,created_at,resolved_at, location, type:complaint_types(name,icon)"
+          "id, created_at, name, phone, email, national_id, title, details, image_url, address, status, type:complaint_types(id, name, icon)"
         )
         .eq("national_id", complainant.nationalId || "")
         .order("created_at", { ascending: false });
       if (!error && data) {
-        const mapped = (data as any[]).map((c) => ({
+        const mapped = (data as any[])?.map((c) => ({
           id: c.id,
           title: c.title,
-          description: c.description,
+          description: c.details,
           status: c.status,
-          type: c.type,
+          type: {
+            id: c.type?.id || "",
+            name: c.type?.name || "",
+            icon: c.type?.icon || "",
+          },
           createdAt: c.created_at,
           resolvedAt: c.resolved_at,
         }));
@@ -83,6 +122,36 @@ const CitizenDashboard: React.FC = () => {
     }
   };
 
+  const fetchComplaintsByIdentity = async (nationalId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("complaints")
+        .select(
+          "id, created_at, name, phone, email, national_id, title, details, image_url, address, status, type:complaint_types(id, name, icon)"
+        )
+        .eq("national_id", nationalId)
+        .order("created_at", { ascending: false });
+      if (!error && data) {
+        const mapped = (data as any[])?.map((c) => ({
+          id: c.id,
+          title: c.title,
+          description: c.details,
+          status: c.status,
+          type: {
+            id: c.type?.id || "",
+            name: c.type?.name || "",
+            icon: c.type?.icon || "",
+          },
+          createdAt: c.created_at,
+          resolvedAt: c.resolved_at,
+        }));
+        setComplaints(mapped as any);
+      }
+    } catch (error) {
+      console.error("Error fetching complaints:", error);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "UNRESOLVED":
@@ -91,6 +160,8 @@ const CitizenDashboard: React.FC = () => {
         return "bg-yellow-100 text-yellow-800";
       case "BEING_RESOLVED":
         return "bg-purple-100 text-purple-800";
+      case "NEW":
+        return "bg-blue-100 text-blue-800";
       case "OVERDUE":
         return "bg-red-100 text-red-800";
       case "RESOLVED":
@@ -108,6 +179,8 @@ const CitizenDashboard: React.FC = () => {
         return "قيد التنفيذ";
       case "BEING_RESOLVED":
         return "يتم حلها الآن";
+      case "NEW":
+        return "غير محلولة";
       case "OVERDUE":
         return "متأخرة";
       case "RESOLVED":
@@ -125,6 +198,8 @@ const CitizenDashboard: React.FC = () => {
         return <Clock className="w-4 h-4" />;
       case "BEING_RESOLVED":
         return <Wrench className="w-4 h-4" />;
+      case "NEW":
+        return <AlertCircle className="w-4 h-4" />;
       case "OVERDUE":
         return <AlertTriangle className="w-4 h-4" />;
       case "RESOLVED":
@@ -132,6 +207,20 @@ const CitizenDashboard: React.FC = () => {
       default:
         return <AlertCircle className="w-4 h-4" />;
     }
+  };
+
+  const getTypeIcon = (iconName: string) => {
+    const iconMap: { [key: string]: React.ReactNode } = {
+      Building: <Building className="w-4 h-4" />,
+      Wrench: <Wrench className="w-4 h-4" />,
+      Shield: <Shield className="w-4 h-4" />,
+      Lightbulb: <Lightbulb className="w-4 h-4" />,
+      Wifi: <Wifi className="w-4 h-4" />,
+      Tree: <Leaf className="w-4 h-4" />,
+      Leaf: <Leaf className="w-4 h-4" />,
+      MessageSquare: <MessageSquare className="w-4 h-4" />,
+    };
+    return iconMap[iconName] || <FileText className="w-4 h-4" />;
   };
 
   if (loading) {
@@ -148,12 +237,41 @@ const CitizenDashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Impersonation banner */}
+        {impersonatedCitizenId && (
+          <div className="bg-yellow-100 border border-yellow-200 text-yellow-900 rounded-lg p-4 mb-4 flex items-center justify-between">
+            <div>
+              أنت تشاهد كـ مواطن:{" "}
+              {impersonationName ||
+                localStorage.getItem("impersonatedCitizenName") ||
+                ""}
+            </div>
+            <button
+              onClick={() => {
+                try {
+                  localStorage.removeItem("impersonatedCitizenId");
+                  localStorage.removeItem("impersonatedCitizenName");
+                } catch {}
+                window.location.href = "/admin-dashboard";
+              }}
+              className="px-3 py-1 bg-yellow-600 text-white rounded"
+            >
+              إنهاء التجربة
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
-                أهلاً بك، {complainant?.fullName}
+                أهلاً بك،{" "}
+                {impersonatedCitizenId
+                  ? impersonationName ||
+                    localStorage.getItem("impersonatedCitizenName") ||
+                    ""
+                  : complainant?.fullName}
               </h1>
               <p className="text-gray-600 mt-1">
                 تابع شكاواك وحالتها من خلال لوحة التحكم
@@ -176,9 +294,12 @@ const CitizenDashboard: React.FC = () => {
                 <div className="text-2xl font-bold text-orange-600">
                   {
                     complaints.filter((c) =>
-                      ["UNRESOLVED", "IN_PROGRESS", "BEING_RESOLVED"].includes(
-                        c.status
-                      )
+                      [
+                        "UNRESOLVED",
+                        "IN_PROGRESS",
+                        "BEING_RESOLVED",
+                        "NEW",
+                      ].includes(c.status)
                     ).length
                   }
                 </div>
@@ -257,10 +378,8 @@ const CitizenDashboard: React.FC = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center">
-                          <span className="text-lg ml-2">
-                            {complaint.type.icon}
-                          </span>
-                          <span className="text-sm text-gray-900">
+                          {getTypeIcon(complaint.type.icon)}
+                          <span className="text-sm text-gray-900 mr-2">
                             {complaint.type.name}
                           </span>
                         </div>
@@ -334,10 +453,10 @@ const CitizenDashboard: React.FC = () => {
                       </span>
                     </span>
                     <div className="flex items-center text-sm text-gray-600">
-                      <span className="text-lg ml-2">
-                        {selectedComplaint.type.icon}
+                      {getTypeIcon(selectedComplaint.type.icon)}
+                      <span className="mr-2">
+                        {selectedComplaint.type.name}
                       </span>
-                      {selectedComplaint.type.name}
                     </div>
                   </div>
                 </div>
