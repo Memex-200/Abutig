@@ -15,6 +15,21 @@ interface HomePageProps {
 }
 
 const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
+  // Responsive background image logic
+  const [bgImage, setBgImage] = React.useState("url(/images/logo.jpg)");
+
+  React.useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 768) {
+        setBgImage("url(/images/logo4.jpg)");
+      } else {
+        setBgImage("url(/images/logo.jpg)");
+      }
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   const features = [
     {
       icon: FileText,
@@ -95,77 +110,78 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
     },
   ];
 
-  const stats = [
-    {
-      number: "1,234",
-      label: "شكوى تم حلها",
-      icon: CheckCircle,
-      color: "text-green-600",
-    },
-    {
-      number: "89",
-      label: "شكوى قيد المعالجة",
-      icon: AlertCircle,
-      color: "text-orange-600",
-    },
-    {
-      number: "45",
-      label: "شكوى جديدة",
-      icon: FileText,
-      color: "text-blue-600",
-    },
-    {
-      number: "24/7",
-      label: "خدمة على مدار الساعة",
-      icon: Clock,
-      color: "text-purple-600",
-    },
-  ];
+  // const stats = [
+  //   {
+  //     number: "1,234",
+  //     label: "شكوى تم حلها",
+  //     icon: CheckCircle,
+  //     color: "text-green-600",
+  //   },
+  //   {
+  //     number: "89",
+  //     label: "شكوى قيد المعالجة",
+  //     icon: AlertCircle,
+  //     color: "text-orange-600",
+  //   },
+  //   {
+  //     number: "45",
+  //     label: "شكوى جديدة",
+  //     icon: FileText,
+  //     color: "text-blue-600",
+  //   },
+  //   {
+  //     number: "24/7",
+  //     label: "خدمة على مدار الساعة",
+  //     icon: Clock,
+  //     color: "text-purple-600",
+  //   },
+  // ];
 
   return (
     <div className="min-h-screen">
       {/* Hero Section */}
       <section
-        className="text-white py-20 relative overflow-hidden"
+        className="text-white py-12 md:py-20 relative overflow-hidden"
         style={{
-          backgroundImage: "url(/images/logo.jpg)",
+          backgroundImage: bgImage,
           backgroundSize: "cover",
           backgroundPosition: "center",
           backgroundRepeat: "no-repeat",
+          minHeight: "60vh",
         }}
       >
         {/* Overlay for better text readability */}
         <div className="absolute inset-0 bg-black bg-opacity-50"></div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="text-center pt-16">
-            <h1 className="text-4xl md:text-6xl font-bold mb-6">
+          <div className="text-center pt-8 md:pt-16">
+            <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold mb-4 md:mb-6 leading-tight">
               نظام الشكاوى البلدية
             </h1>
-            <p className="text-xl md:text-2xl mb-8 text-blue-100">
+            <p className="text-lg sm:text-xl md:text-2xl mb-6 md:mb-8 text-blue-100">
               مجلس مدينة أبوتيج - خدمة المواطنين أولوية
             </p>
-            <p className="text-lg mb-12 max-w-3xl mx-auto text-blue-50">
+            <p className="text-base sm:text-lg mb-8 md:mb-12 max-w-3xl mx-auto text-blue-50 px-4">
               نوفر لك خدمة متكاملة لتقديم الشكاوى ومتابعتها بكل سهولة وشفافية.
               فريقنا المتخصص جاهز لخدمتك على مدار الساعة لضمان حل جميع المشاكل
               بسرعة وكفاءة.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-3 md:gap-4 justify-center px-4">
               <button
                 onClick={() => onNavigate("complaint-form")}
-                className="bg-white text-blue-600 px-8 py-4 rounded-lg font-semibold text-lg hover:bg-blue-50 transition-all duration-300 transform hover:scale-105 shadow-lg"
+                className="bg-white text-blue-600 px-6 md:px-8 py-3 md:py-4 rounded-lg font-semibold text-base md:text-lg hover:bg-blue-50 transition-all duration-300 transform hover:scale-105 shadow-lg w-full sm:w-auto"
               >
                 تقديم شكوى جديدة
               </button>
-              <div className="flex items-center space-x-reverse space-x-4">
+              <div className="flex flex-col sm:flex-row items-center gap-3 md:gap-4 w-full sm:w-auto">
                 <button
                   onClick={() => onNavigate("login")}
-                  className="border-2 border-white text-white px-6 py-3 rounded-lg font-semibold text-lg hover:bg-white hover:text-blue-600 transition-all duration-300 transform hover:scale-105"
+                  className="border-2 border-white text-white px-4 md:px-6 py-3 rounded-lg font-semibold text-base md:text-lg hover:bg-white hover:text-blue-600 transition-all duration-300 transform hover:scale-105 w-full sm:w-auto"
                 >
                   موظف/أدمن
                 </button>
                 <button
                   onClick={() => onNavigate("citizen-login")}
-                  className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold text-lg hover:bg-green-700 transition-all duration-300 transform hover:scale-105"
+                  className="bg-green-600 text-white px-4 md:px-6 py-3 rounded-lg font-semibold text-base md:text-lg hover:bg-green-700 transition-all duration-300 transform hover:scale-105 w-full sm:w-auto"
                 >
                   مواطن
                 </button>
@@ -188,7 +204,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
       </section>
 
       {/* Stats Section */}
-      <section className="py-16 bg-white">
+      {/* <section className="py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
             {stats.map((stat, index) => (
@@ -205,7 +221,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Features Section */}
       <section className="py-16 bg-gray-50">
