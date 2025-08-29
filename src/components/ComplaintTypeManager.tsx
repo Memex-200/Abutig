@@ -104,7 +104,38 @@ const ComplaintTypeManager: React.FC = () => {
     if (!confirm("هل أنت متأكد من حذف هذا النوع؟")) return;
 
     try {
-      console.log("Deleting complaint type:", id);
+      // تحقق من وجود شكاوى مرتبطة بهذا النوع
+      const { count, error: countError } = await supabase
+        .from("complaints")
+        .select("id", { count: "exact", head: true })
+        .eq("type_id", id);
+
+      if (countError) {
+        console.error("Error counting related complaints:", countError);
+        setError("تعذر التحقق من الشكاوى المرتبطة: " + countError.message);
+        return;
+      }
+
+      if ((count ?? 0) > 0) {
+        // إن كان هناك شكاوى، فعِّل التعطيل بدل الحذف
+        const { error: deactivateError } = await supabase
+          .from("complaint_types")
+          .update({ is_active: false })
+          .eq("id", id);
+
+        if (deactivateError) {
+          console.error("Error deactivating complaint type:", deactivateError);
+          setError("فشل في تعطيل نوع الشكوى: " + deactivateError.message);
+          return;
+        }
+
+        fetchComplaintTypes();
+        setError("");
+        alert("لا يمكن حذف النوع لوجود شكاوى مرتبطة. تم تعطيله بدلًا من ذلك.");
+        return;
+      }
+
+      // لا توجد شكاوى مرتبطة، احذف النوع
       const { error } = await supabase
         .from("complaint_types")
         .delete()
@@ -114,7 +145,6 @@ const ComplaintTypeManager: React.FC = () => {
         console.error("Error deleting complaint type:", error);
         setError("فشل في حذف نوع الشكوى: " + error.message);
       } else {
-        console.log("Complaint type deleted successfully");
         fetchComplaintTypes();
         setError("");
         alert("تم حذف نوع الشكوى بنجاح!");

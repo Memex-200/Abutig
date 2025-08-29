@@ -294,7 +294,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <h2 className="text-3xl md:text-4xl font-bold mb-8">تواصل معنا</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-8 max-w-4xl mx-auto">
               <div className="flex flex-col items-center">
                 <Phone className="w-12 h-12 mb-4 text-blue-200" />
                 <h3 className="text-xl font-semibold mb-2">الهاتف</h3>
@@ -311,6 +311,26 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                 <Clock className="w-12 h-12 mb-4 text-blue-200" />
                 <h3 className="text-xl font-semibold mb-2">ساعات العمل</h3>
                 <p className="text-blue-100">24/7 خدمة مستمرة</p>
+              </div>
+              <div className="flex flex-col items-center">
+                <a
+                  href="https://www.facebook.com/share/1GERhinivV/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Facebook"
+                  className="group"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    className="w-12 h-12 mb-4 text-blue-200 group-hover:text-white transition-colors"
+                    fill="currentColor"
+                  >
+                    <path d="M22.675 0h-21.35C.596 0 0 .596 0 1.326v21.348C0 23.404.596 24 1.326 24h11.495v-9.294H9.691V11.01h3.13V8.414c0-3.1 1.893-4.788 4.659-4.788 1.325 0 2.463.099 2.794.143v3.24l-1.917.001c-1.504 0-1.796.715-1.796 1.765v2.314h3.587l-.467 3.696h-3.12V24h6.116C23.404 24 24 23.404 24 22.674V1.326C24 .596 23.404 0 22.675 0z" />
+                  </svg>
+                </a>
+                <h3 className="text-xl font-semibold mb-2">فيسبوك</h3>
+                <p className="text-blue-100">تابعنا على فيسبوك</p>
               </div>
             </div>
           </div>

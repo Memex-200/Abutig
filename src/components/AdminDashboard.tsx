@@ -379,6 +379,35 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handleDeleteComplaint = async (complaintId: string) => {
+    if (
+      !confirm(
+        "هل أنت متأكد من حذف هذه الشكوى؟ لا يمكن التراجع عن هذا الإجراء."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("complaints")
+        .delete()
+        .eq("id", complaintId);
+
+      if (error) {
+        console.error("Error deleting complaint:", error);
+        alert("فشل حذف الشكوى: " + error.message);
+        return;
+      }
+
+      alert("تم حذف الشكوى بنجاح!");
+      await fetchData();
+    } catch (error) {
+      console.error("Error deleting complaint:", error);
+      alert("حدث خطأ أثناء حذف الشكوى");
+    }
+  };
+
   const fetchComplaintTypes = async () => {
     try {
       const { data, error } = await supabase
@@ -425,52 +454,89 @@ const AdminDashboard: React.FC = () => {
 
   const exportComplaints = async (format: "excel" | "csv") => {
     try {
-      if (complaints.length === 0) {
+      // تحميل البيانات مباشرة من قاعدة البيانات للتأكد من الحصول على أحدث البيانات
+      console.log("Fetching complaints for export...");
+      const { data: exportComplaintsData, error: fetchError } = await supabase
+        .from("complaints")
+        .select(
+          `
+          id, 
+          created_at, 
+          name, 
+          phone, 
+          email, 
+          national_id, 
+          title, 
+          details, 
+          image_url, 
+          address, 
+          status, 
+          type:complaint_types(id, name)
+        `
+        )
+        .order("created_at", { ascending: false });
+
+      if (fetchError) {
+        console.error("Error fetching complaints for export:", fetchError);
+        alert("فشل في جلب البيانات للتصدير: " + fetchError.message);
+        return;
+      }
+
+      if (!exportComplaintsData || exportComplaintsData.length === 0) {
         alert("لا توجد شكاوى للتصدير");
         return;
       }
 
+      console.log(
+        "Exporting complaints:",
+        exportComplaintsData.length,
+        "complaints"
+      );
+
       // Prepare data for export
-      const exportData = complaints.map((complaint) => ({
+      const exportData = exportComplaintsData.map((complaint: any) => ({
         "رقم الشكوى": complaint.id.slice(-8),
-        "اسم المواطن": complaint.complainant.fullName,
-        "رقم الهاتف": complaint.complainant.phone,
-        "البريد الإلكتروني": complaint.complainant.email,
-        "الرقم القومي": complaint.complainant.nationalId,
-        "نوع الشكوى": complaint.type.name,
-        "عنوان الشكوى": complaint.title,
-        "وصف الشكوى": complaint.description,
-        العنوان: complaint.location,
+        "اسم المواطن": complaint.name || "غير محدد",
+        "رقم الهاتف": complaint.phone || "غير محدد",
+        "البريد الإلكتروني": complaint.email || "غير محدد",
+        "الرقم القومي": complaint.national_id || "غير محدد",
+        "نوع الشكوى": complaint.type?.name || "غير محدد",
+        "عنوان الشكوى": complaint.title || "غير محدد",
+        "وصف الشكوى": complaint.details || "غير محدد",
+        العنوان: complaint.address || "غير محدد",
         الحالة: getStatusLabel(complaint.status),
-        "تاريخ الإنشاء": new Date(complaint.createdAt).toLocaleDateString(
-          "ar-EG-u-ca-gregory"
-        ),
-        "تاريخ الحل": complaint.resolvedAt
-          ? new Date(complaint.resolvedAt).toLocaleDateString(
+        "تاريخ الإنشاء": complaint.created_at
+          ? new Date(complaint.created_at).toLocaleDateString(
               "ar-EG-u-ca-gregory"
             )
-          : "",
-        الأولوية:
-          complaint.priority === "HIGH"
-            ? "عالية"
-            : complaint.priority === "MEDIUM"
-            ? "متوسطة"
-            : "منخفضة",
+          : "غير محدد",
+        "تاريخ الحل": "", // لا يوجد resolved_at في البيانات المحملة
+        الأولوية: "متوسطة", // افتراضية
       }));
 
+      console.log("Export data prepared:", exportData.length, "rows");
+
       if (format === "excel") {
-        // Create Excel file using SheetJS
-        const XLSX = await import("xlsx");
-        const ws = XLSX.utils.json_to_sheet(exportData);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "الشكاوى");
+        try {
+          // Create Excel file using SheetJS
+          const XLSX = await import("xlsx");
+          console.log("XLSX imported successfully, creating worksheet...");
 
-        // Generate filename with current date
-        const date = new Date().toISOString().split("T")[0];
-        const filename = `شكاوى_${date}.xlsx`;
+          const ws = XLSX.utils.json_to_sheet(exportData);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "الشكاوى");
 
-        XLSX.writeFile(wb, filename);
-        alert("تم تصدير الشكاوى بنجاح!");
+          // Generate filename with current date
+          const date = new Date().toISOString().split("T")[0];
+          const filename = `شكاوى_${date}.xlsx`;
+
+          console.log("Writing Excel file:", filename);
+          XLSX.writeFile(wb, filename);
+          alert("تم تصدير الشكاوى بنجاح!");
+        } catch (excelError) {
+          console.error("Excel export error:", excelError);
+          alert("حدث خطأ أثناء تصدير ملف Excel: " + excelError);
+        }
       } else {
         // Create CSV file
         const headers = Object.keys(exportData[0]).join(",");
@@ -951,14 +1017,24 @@ const AdminDashboard: React.FC = () => {
                                 ).toLocaleDateString("ar-EG-u-ca-gregory")}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                <button
-                                  onClick={() =>
-                                    handleViewComplaintDetails(complaint)
-                                  }
-                                  className="text-blue-600 hover:text-blue-900"
-                                >
-                                  عرض التفاصيل
-                                </button>
+                                <div className="flex space-x-reverse space-x-2">
+                                  <button
+                                    onClick={() =>
+                                      handleViewComplaintDetails(complaint)
+                                    }
+                                    className="text-blue-600 hover:text-blue-900"
+                                  >
+                                    عرض التفاصيل
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleDeleteComplaint(complaint.id)
+                                    }
+                                    className="text-red-600 hover:text-red-900"
+                                  >
+                                    حذف
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))
