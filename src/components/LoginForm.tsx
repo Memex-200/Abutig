@@ -58,43 +58,80 @@ const LoginForm: React.FC<LoginFormProps> = ({ onNavigate }) => {
         return;
       }
 
-      // Just check if user exists in "users" table
-      const { data: userData, error: userError } = await supabase
-        .from("users")
-        .select("*")
-        .eq("email", staffForm.email)
-        .eq("password", staffForm.password) // plaintext check (not recommended in production)
-        .single();
+      // Use proper Supabase Auth for employee login
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: staffForm.email,
+        password: staffForm.password,
+      });
 
-      if (userError || !userData) {
-        setError("لم يتم العثور على المستخدم أو كلمة المرور غير صحيحة");
+      if (error) {
+        console.error("Supabase auth error:", error);
+        // Handle specific error cases
+        if (error.status === 400) {
+          setError("الحساب غير موجود أو كلمة المرور غير صحيحة");
+        } else if (error.message.includes("Invalid login credentials")) {
+          setError("الحساب غير موجود أو كلمة المرور غير صحيحة");
+        } else {
+          setError(error.message || "خطأ في تسجيل الدخول");
+        }
         setLoading(false);
         return;
       }
 
-      // Set user context and localStorage
-      const mappedUser = {
-        id: userData.id,
-        email: userData.email,
-        fullName: userData.full_name,
-        role: userData.role,
-      };
-      login(mappedUser, "");
-      try {
-        if (userData.role === "ADMIN") {
-          localStorage.setItem("adminMode", "true");
-        } else {
-          localStorage.removeItem("adminMode");
-        }
-        localStorage.removeItem("impersonatedCitizenId");
-        localStorage.removeItem("impersonatedCitizenName");
-      } catch {}
+      if (data.session) {
+        const authUserId = data.session.user.id;
+        const { data: profiles, error: profileError } = await supabase
+          .from("users")
+          .select("id,email,full_name,role,is_active")
+          .eq("auth_user_id", authUserId)
+          .limit(1);
 
-      // Navigate based on role
-      if (userData.role === "ADMIN") {
-        onNavigate("admin-dashboard");
-      } else {
-        onNavigate("employee-dashboard");
+        if (profileError) {
+          console.error("Profile fetch error:", profileError);
+          setError("خطأ في جلب بيانات المستخدم");
+          setLoading(false);
+          return;
+        }
+
+        if (!profiles || profiles.length === 0) {
+          setError("لم يتم العثور على ملف المستخدم");
+          setLoading(false);
+          return;
+        }
+
+        const userData = profiles[0];
+
+        // Check if user is active
+        if (!userData.is_active) {
+          setError("الحساب غير مُفعل");
+          setLoading(false);
+          return;
+        }
+
+        // Set user context and localStorage
+        const mappedUser = {
+          id: userData.id,
+          email: userData.email,
+          fullName: userData.full_name,
+          role: userData.role,
+        };
+        login(mappedUser, "");
+        try {
+          if (userData.role === "ADMIN") {
+            localStorage.setItem("adminMode", "true");
+          } else {
+            localStorage.removeItem("adminMode");
+          }
+          localStorage.removeItem("impersonatedCitizenId");
+          localStorage.removeItem("impersonatedCitizenName");
+        } catch {}
+
+        // Navigate based on role
+        if (userData.role === "ADMIN") {
+          onNavigate("admin-dashboard");
+        } else {
+          onNavigate("employee-dashboard");
+        }
       }
     } catch (err) {
       console.error("Login error:", err);
