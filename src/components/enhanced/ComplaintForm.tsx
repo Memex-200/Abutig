@@ -20,6 +20,13 @@ import {
   sanitizeInput,
   checkRateLimit,
 } from "../../utils/security.ts";
+import {
+  validatePhoneNumber,
+  validateNationalId,
+  validateEmail,
+  validateRequired,
+  ValidationResult,
+} from "../../utils/validation";
 import ReCaptcha from "../ReCaptcha";
 
 interface ComplaintFormProps {
@@ -107,53 +114,72 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
     }
 
     // Validate required fields
-    if (!validateInput.required(formData.fullName)) {
-      newErrors.fullName = "الاسم الكامل مطلوب";
+    const fullNameValidation = validateRequired(
+      formData.fullName,
+      "الاسم الكامل"
+    );
+    if (!fullNameValidation.isValid) {
+      newErrors.fullName = fullNameValidation.error!;
     } else if (!validateInput.name(formData.fullName)) {
       newErrors.fullName = "الاسم يجب أن يحتوي على أحرف عربية فقط";
     }
 
-    if (!validateInput.required(formData.phone)) {
-      newErrors.phone = "رقم الهاتف مطلوب";
-    } else if (!validateInput.phone(formData.phone)) {
-      newErrors.phone = "رقم الهاتف غير صحيح";
+    // Validate phone number
+    const phoneValidation = validatePhoneNumber(formData.phone);
+    if (!phoneValidation.isValid) {
+      newErrors.phone = phoneValidation.error!;
     }
 
-    if (!validateInput.required(formData.nationalId)) {
-      newErrors.nationalId = "الرقم القومي مطلوب";
-    } else if (!validateInput.nationalId(formData.nationalId)) {
-      newErrors.nationalId = "الرقم القومي يجب أن يكون 14 رقم";
+    // Validate national ID
+    const nationalIdValidation = validateNationalId(formData.nationalId);
+    if (!nationalIdValidation.isValid) {
+      newErrors.nationalId = nationalIdValidation.error!;
     }
 
-    if (!validateInput.required(formData.email)) {
-      newErrors.email = "البريد الإلكتروني مطلوب";
-    } else if (!validateInput.email(formData.email)) {
-      newErrors.email = "البريد الإلكتروني غير صحيح";
+    // Validate email (optional)
+    const emailValidation = validateEmail(formData.email);
+    if (!emailValidation.isValid) {
+      newErrors.email = emailValidation.error!;
     }
 
-    if (!validateInput.required(formData.typeId)) {
-      newErrors.typeId = "نوع الشكوى مطلوب";
+    // Validate complaint type
+    const typeValidation = validateRequired(formData.typeId, "نوع الشكوى");
+    if (!typeValidation.isValid) {
+      newErrors.typeId = typeValidation.error!;
     }
 
-    if (!validateInput.required(formData.title)) {
-      newErrors.title = "عنوان الشكوى مطلوب";
+    // Validate title
+    const titleValidation = validateRequired(formData.title, "عنوان الشكوى");
+    if (!titleValidation.isValid) {
+      newErrors.title = titleValidation.error!;
     } else if (!validateInput.minLength(formData.title, 5)) {
       newErrors.title = "عنوان الشكوى يجب أن يكون 5 أحرف على الأقل";
     }
 
-    if (!validateInput.required(formData.description)) {
-      newErrors.description = "تفاصيل الشكوى مطلوبة";
+    // Validate description
+    const descriptionValidation = validateRequired(
+      formData.description,
+      "تفاصيل الشكوى"
+    );
+    if (!descriptionValidation.isValid) {
+      newErrors.description = descriptionValidation.error!;
     } else if (!validateInput.minLength(formData.description, 20)) {
       newErrors.description = "تفاصيل الشكوى يجب أن تكون 20 حرف على الأقل";
     }
 
-    if (!validateInput.required(formData.location)) {
-      newErrors.location = "موقع الشكوى مطلوب";
+    // Validate location
+    const locationValidation = validateRequired(
+      formData.location,
+      "موقع الشكوى"
+    );
+    if (!locationValidation.isValid) {
+      newErrors.location = locationValidation.error!;
     }
 
-    if (!captchaToken) {
-      newErrors.general = "يرجى إكمال التحقق من أنك لست روبوت";
-    }
+    // CAPTCHA validation temporarily disabled
+    // if (!captchaToken) {
+    //   newErrors.general = "يرجى إكمال التحقق من أنك لست روبوت";
+    // }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -479,7 +505,7 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                 {/* File Upload */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    المرفقات (اختياري)
+                    المرفقات
                   </label>
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
                     <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
@@ -527,19 +553,9 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              {/* ReCaptcha */}
-              <div className="flex justify-center">
-                <ReCaptcha onVerify={setCaptchaToken} />
-              </div>
-
               {/* Submit Button */}
               <div className="flex justify-center">
-                <Button
-                  type="submit"
-                  loading={loading}
-                  disabled={!captchaToken}
-                  size="lg"
-                >
+                <Button type="submit" loading={loading} size="lg">
                   تقديم الشكوى
                 </Button>
               </div>

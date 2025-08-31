@@ -3,6 +3,13 @@ import { FileText, Upload, X, AlertCircle, CheckCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../utils/supabaseClient.ts";
 import ReCaptcha from "./ReCaptcha";
+import { 
+  validatePhoneNumber, 
+  validateNationalId, 
+  validateEmail, 
+  validateRequired,
+  ValidationResult 
+} from "../utils/validation";
 
 interface ComplaintFormProps {
   onNavigate: (page: string) => void;
@@ -37,6 +44,7 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
   );
   const [error, setError] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetchComplaintTypes();
@@ -69,6 +77,15 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
       ...prev,
       [name]: value,
     }));
+    
+    // Clear field error when user starts typing
+    if (fieldErrors[name]) {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,17 +108,62 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
   };
 
   const validateForm = () => {
-    if (!formData.fullName.trim()) return setError("الاسم مطلوب"), false;
-    if (!formData.phone.trim()) return setError("رقم الهاتف مطلوب"), false;
-    if (!formData.email.trim())
-      return setError("البريد الإلكتروني مطلوب"), false;
-    if (!formData.nationalId.trim())
-      return setError("الرقم القومي مطلوب"), false;
-    if (!formData.typeId.trim()) return setError("نوع الشكوى مطلوب"), false;
-    if (!formData.title.trim()) return setError("عنوان الشكوى مطلوب"), false;
-    if (!formData.description.trim())
-      return setError("وصف الشكوى مطلوب"), false;
-    if (!formData.location.trim()) return setError("العنوان مطلوب"), false;
+    const errors: Record<string, string> = {};
+    
+    // Validate required fields
+    const fullNameValidation = validateRequired(formData.fullName, "الاسم الكامل");
+    if (!fullNameValidation.isValid) {
+      errors.fullName = fullNameValidation.error!;
+    }
+    
+    // Validate phone number
+    const phoneValidation = validatePhoneNumber(formData.phone);
+    if (!phoneValidation.isValid) {
+      errors.phone = phoneValidation.error!;
+    }
+    
+    // Validate email (optional)
+    const emailValidation = validateEmail(formData.email);
+    if (!emailValidation.isValid) {
+      errors.email = emailValidation.error!;
+    }
+    
+    // Validate national ID
+    const nationalIdValidation = validateNationalId(formData.nationalId);
+    if (!nationalIdValidation.isValid) {
+      errors.nationalId = nationalIdValidation.error!;
+    }
+    
+    // Validate complaint type
+    const typeValidation = validateRequired(formData.typeId, "نوع الشكوى");
+    if (!typeValidation.isValid) {
+      errors.typeId = typeValidation.error!;
+    }
+    
+    // Validate title
+    const titleValidation = validateRequired(formData.title, "عنوان الشكوى");
+    if (!titleValidation.isValid) {
+      errors.title = titleValidation.error!;
+    }
+    
+    // Validate description
+    const descriptionValidation = validateRequired(formData.description, "وصف الشكوى");
+    if (!descriptionValidation.isValid) {
+      errors.description = descriptionValidation.error!;
+    }
+    
+    // Validate location
+    const locationValidation = validateRequired(formData.location, "الموقع");
+    if (!locationValidation.isValid) {
+      errors.location = locationValidation.error!;
+    }
+    
+    setFieldErrors(errors);
+    
+    if (Object.keys(errors).length > 0) {
+      return false;
+    }
+    
     setError("");
     return true;
   };
@@ -165,6 +227,20 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
 
       if (insertError) {
         console.error("Complaint insert error:", insertError);
+        
+        // Handle specific constraint violations
+        if (insertError.message?.includes('unique_name_national_id')) {
+          throw new Error("هذا الرقم القومي مسجل بالفعل لشخص آخر. يرجى التأكد من صحة البيانات.");
+        }
+        
+        if (insertError.message?.includes('check_national_id_length')) {
+          throw new Error("الرقم القومي يجب أن يكون 14 رقم بالضبط");
+        }
+        
+        if (insertError.message?.includes('check_phone_format')) {
+          throw new Error("رقم الهاتف يجب أن يكون 11 رقم ويبدأ بـ 01");
+        }
+        
         throw new Error(insertError.message || "فشل إرسال الشكوى");
       }
 
@@ -183,6 +259,7 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
         });
         setFiles([]);
         setTrackingCodeState(null);
+        setFieldErrors({});
       }, 5000);
     } catch (error: any) {
       console.error("Complaint submission error:", error);
@@ -287,9 +364,14 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   name="fullName"
                   value={formData.fullName}
                   onChange={handleInputChange}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                  className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base ${
+                    fieldErrors.fullName ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   placeholder="أدخل اسمك الكامل"
                 />
+                {fieldErrors.fullName && (
+                  <p className="text-red-500 text-xs mt-1">{fieldErrors.fullName}</p>
+                )}
               </div>
 
               <div>
@@ -301,9 +383,15 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   name="phone"
                   value={formData.phone}
                   onChange={handleInputChange}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                  className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base ${
+                    fieldErrors.phone ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   placeholder="01xxxxxxxxx"
+                  maxLength={11}
                 />
+                {fieldErrors.phone && (
+                  <p className="text-red-500 text-xs mt-1">{fieldErrors.phone}</p>
+                )}
               </div>
 
               <div>
@@ -315,23 +403,34 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   name="nationalId"
                   value={formData.nationalId}
                   onChange={handleInputChange}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                  className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base ${
+                    fieldErrors.nationalId ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   placeholder="14 رقم"
+                  maxLength={14}
                 />
+                {fieldErrors.nationalId && (
+                  <p className="text-red-500 text-xs mt-1">{fieldErrors.nationalId}</p>
+                )}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  البريد الإلكتروني (اختياري)
+                  البريد الإلكتروني
                 </label>
                 <input
                   type="email"
                   name="email"
                   value={formData.email}
                   onChange={handleInputChange}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                  className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base ${
+                    fieldErrors.email ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   placeholder="example@email.com"
                 />
+                {fieldErrors.email && (
+                  <p className="text-red-500 text-xs mt-1">{fieldErrors.email}</p>
+                )}
               </div>
             </div>
 
@@ -345,7 +444,9 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   name="typeId"
                   value={formData.typeId}
                   onChange={handleInputChange}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                  className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base ${
+                    fieldErrors.typeId ? 'border-red-500' : 'border-gray-300'
+                  }`}
                 >
                   <option value="">اختر نوع الشكوى</option>
                   {complaintTypes.map((type) => (
@@ -354,6 +455,9 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                     </option>
                   ))}
                 </select>
+                {fieldErrors.typeId && (
+                  <p className="text-red-500 text-xs mt-1">{fieldErrors.typeId}</p>
+                )}
               </div>
 
               <div>
@@ -365,9 +469,14 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   name="title"
                   value={formData.title}
                   onChange={handleInputChange}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                  className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base ${
+                    fieldErrors.title ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   placeholder="عنوان مختصر للشكوى"
                 />
+                {fieldErrors.title && (
+                  <p className="text-red-500 text-xs mt-1">{fieldErrors.title}</p>
+                )}
               </div>
 
               <div>
@@ -379,30 +488,40 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   value={formData.description}
                   onChange={handleInputChange}
                   rows={4}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                  className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base ${
+                    fieldErrors.description ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   placeholder="اشرح تفاصيل الشكوى بوضوح..."
                 />
+                {fieldErrors.description && (
+                  <p className="text-red-500 text-xs mt-1">{fieldErrors.description}</p>
+                )}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  الموقع (اختياري)
+                  الموقع *
                 </label>
                 <input
                   type="text"
                   name="location"
                   value={formData.location}
                   onChange={handleInputChange}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                  className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base ${
+                    fieldErrors.location ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   placeholder="العنوان أو موقع المشكلة"
                 />
+                {fieldErrors.location && (
+                  <p className="text-red-500 text-xs mt-1">{fieldErrors.location}</p>
+                )}
               </div>
             </div>
 
             {/* File Upload */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                الملفات المرفقة (اختياري)
+                الملفات المرفقة
               </label>
               <div
                 className="border-2 border-dashed border-gray-300 rounded-lg p-4 sm:p-6 text-center hover:border-blue-400 transition-colors"
@@ -458,25 +577,10 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
 
             {/* Submit Button */}
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-4 sm:pt-6">
-              <div className="flex items-center">
-                <ReCaptcha
-                  siteKey={
-                    import.meta.env.VITE_RECAPTCHA_SITE_KEY || "test_key"
-                  }
-                  onToken={(t) => {
-                    console.log(
-                      "CAPTCHA token received:",
-                      t ? "Valid" : "Invalid"
-                    );
-                    setCaptchaToken(t);
-                  }}
-                />
-                {/* CAPTCHA validation message temporarily disabled */}
-              </div>
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-blue-600 text-white py-2 sm:py-3 px-4 sm:px-6 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base"
+                className="flex-1 bg-blue-600 text-white py-3 sm:py-4 px-6 sm:px-8 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105 shadow-lg text-base sm:text-lg"
               >
                 {loading ? "جاري الإرسال..." : "تقديم الشكوى"}
               </button>
@@ -486,7 +590,7 @@ const ComplaintForm: React.FC<ComplaintFormProps> = ({ onNavigate }) => {
                   console.log("Cancel button clicked - navigating to home");
                   onNavigate("home");
                 }}
-                className="px-4 sm:px-6 py-2 sm:py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm sm:text-base"
+                className="px-6 sm:px-8 py-3 sm:py-4 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 hover:border-gray-400 transition-all duration-300 text-base sm:text-lg"
               >
                 إلغاء
               </button>

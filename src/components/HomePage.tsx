@@ -16,14 +16,14 @@ interface HomePageProps {
 
 const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
   // Responsive background image logic
-  const [bgImage, setBgImage] = React.useState("url(/images/logo.jpg)");
+  const [bgImage, setBgImage] = React.useState("url(/images/finallogos.jpg)");
 
   React.useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth <= 768) {
-        setBgImage("url(/images/logo4.jpg)");
+        setBgImage("url(/images/finallogo.jpg)");
       } else {
-        setBgImage("url(/images/logo.jpg)");
+        setBgImage("url(/images/finallogo.jpg)");
       }
     };
     handleResize();
@@ -57,6 +57,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
     },
   ];
 
+  // ...existing code...
   const complaintTypes = [
     {
       icon: "🏚️",
@@ -84,11 +85,6 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
       description: "مشاكل في الإنارة العامة",
     },
     {
-      icon: "📶",
-      name: "شكوى ضعف أو انقطاع الإنترنت",
-      description: "ضعف أو انقطاع الإنترنت / الشبكة",
-    },
-    {
       icon: "🌳",
       name: "شكوى تعديات على ممتلكات عامة",
       description: "تعديات على أراضي أو ممتلكات عامة",
@@ -109,7 +105,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
       description: "شكاوى أخرى مع تحديد التفاصيل",
     },
   ];
-
+  //
   // const stats = [
   //   {
   //     number: "1,234",
@@ -333,6 +329,17 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                 <p className="text-blue-100">تابعنا على فيسبوك</p>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* AI Development Banner */}
+      <section className="py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <p className="text-sm sm:text-base font-medium">
+              جارٍ تطوير الموقع بالذكاء الاصطناعي
+            </p>
           </div>
         </div>
       </section>
